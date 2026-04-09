@@ -1,0 +1,257 @@
+# =============================================================
+#  Flutter Dev Container
+#
+#  Base: node:24-bookworm-slim (Node.js 24 Active LTS on Debian 12)
+#  Node is a first-class runtime dependency: Firebase CLI and
+#  FlutterFire CLI both require it. Using the official node image
+#  means Dependabot tracks the base image automatically.
+#
+#  Pre-installed (environment only — no app code):
+#    Flutter SDK (stable channel, always latest)
+#    Dart SDK (bundled with Flutter)
+#    Android SDK — platform-tools, android-36, build-tools;36.0.0
+#    Gradle 9.4.1 — installed to /opt/gradle
+#    Java 21 (Eclipse Temurin) — required by Android toolchain
+#    Node.js 24 Active LTS — required by Firebase CLI
+#    Firebase CLI (firebase-tools) — pinned, manually tracked
+#    FlutterFire CLI (dart pub global)
+#    Google Chrome (amd64) / Chromium (arm64) — web builds & tests
+#    Linux desktop build deps (clang, cmake, ninja, GTK3)
+#    Git + GitHub CLI (gh) — git-lfs intentionally excluded (project-level concern)
+#    openssh-client
+#    Starship prompt + Flutter/Dart/Git aliases
+# =============================================================
+
+ARG NODE_VERSION=24
+
+FROM node:${NODE_VERSION}-bookworm-slim
+
+ARG NODE_VERSION
+
+LABEL org.opencontainers.image.title="Flutter Dev Container"
+LABEL org.opencontainers.image.description="Full-stack Flutter development environment — Android · Web · Linux Desktop · Node 24 LTS · Firebase · FlutterFire"
+LABEL org.opencontainers.image.authors="Ali Haidar"
+LABEL org.opencontainers.image.source="https://github.com/alihaidar0/flutter-devcontainer"
+
+# ── Versions ─────────────────────────────────────────────────
+ENV GRADLE_VERSION=9.4.1 \
+    FIREBASE_TOOLS_VERSION=15.13.0 \
+    ANDROID_SDK_ROOT=/home/developer/Android/sdk \
+    FLUTTER_ROOT=/home/developer/flutter \
+    GRADLE_HOME=/opt/gradle \
+    GRADLE_USER_HOME=/home/developer/.gradle \
+    PUB_CACHE=/home/developer/.pub-cache \
+    LANG=C.UTF-8 \
+    LC_ALL=C.UTF-8 \
+    DEBIAN_FRONTEND=noninteractive \
+    TZ=Etc/UTC
+
+# ── PATH ─────────────────────────────────────────────────────
+ENV PATH="${FLUTTER_ROOT}/bin:\
+${PUB_CACHE}/bin:\
+${ANDROID_SDK_ROOT}/platform-tools:\
+${ANDROID_SDK_ROOT}/cmdline-tools/latest/bin:\
+${GRADLE_HOME}/gradle-${GRADLE_VERSION}/bin:\
+${PATH}"
+
+# ── System packages ──────────────────────────────────────────
+#
+# Package notes (all verified against debian:bookworm APT index):
+#   libgl1            — correct slim-image package (replaces libgl1-mesa-glx).
+#
+# Java 21 note:
+#   openjdk-21-jdk is NOT available in Debian 12 (Bookworm) APT repositories.
+#   Debian 12 ships OpenJDK 17 as its highest default version. OpenJDK 21 is
+#   only packaged for Debian 13 (Trixie) and above. Attempting to install
+#   openjdk-21-jdk on Bookworm will always fail with "Unable to locate package".
+#   Solution: Eclipse Temurin 21 from the Adoptium APT repository — see the
+#   dedicated RUN step below.
+#
+# Intentionally excluded (not part of the Flutter/Dart/Android toolchain):
+#   libstdc++-12-dev  — removed; clang on Debian Bookworm uses its own
+#                       bundled libc++ and does not require libstdc++ dev
+#                       headers. Flutter Linux builds with clang work without
+#                       it. Native plugins that genuinely need it pull it in
+#                       transitively via their own build deps.
+#   wget              — curl covers all download needs in this image.
+#   vim               — VS Code is the editor; nano covers emergency edits.
+#   iputils-ping      — network debugging belongs on the host, not the image.
+#   dnsutils          — same rationale as iputils-ping.
+#   netcat-openbsd    — no Flutter/Dart/Android/Firebase tool requires nc.
+#   libblkid-dev      — block-device library; unrelated to this toolchain.
+#   libglu1-mesa      — not available on bookworm-slim; not required by
+#                       Flutter's Linux desktop renderer.
+#   git-lfs           — project-level concern; add via postCreateCommand.
+#
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    curl git unzip zip xz-utils \
+    bash nano jq htop tree procps \
+    ca-certificates gnupg \
+    openssh-client \
+    clang cmake ninja-build pkg-config \
+    libgtk-3-dev liblzma-dev \
+    libgl1 \
+    libfontconfig1 libfreetype6 \
+    sudo \
+    && apt-get clean \
+    && rm -rf /var/lib/apt/lists/*
+
+# ── Java 21 (Eclipse Temurin via Adoptium) ───────────────────
+#
+# WHY NOT openjdk-21-jdk?
+#   openjdk-21-jdk does not exist in Debian 12 (Bookworm) APT repositories.
+#   Debian 12 ships openjdk-17-jdk as its highest available OpenJDK version.
+#   openjdk-21-jdk is only packaged in Debian 13 (Trixie) and above.
+#   Installing it on Bookworm will always produce:
+#     E: Unable to locate package openjdk-21-jdk
+#
+# WHY TEMURIN?
+#   Eclipse Temurin is the Eclipse Adoptium distribution of OpenJDK. It is:
+#     - TCK-certified (Java SE compatible)
+#     - AQAvit quality-verified (production-ready)
+#     - Available for both linux/amd64 and linux/arm64 on Bookworm
+#     - Maintained and security-patched on a quarterly cadence
+#     - The standard recommendation for Java 21 on Debian 12
+#
+# JAVA_HOME:
+#   Temurin installs to an architecture-suffixed path:
+#     amd64 → /usr/lib/jvm/temurin-21-jdk-amd64
+#     arm64 → /usr/lib/jvm/temurin-21-jdk-arm64
+#   A canonical arch-agnostic symlink is created at /usr/local/temurin-21
+#   so JAVA_HOME is stable and identical on both platforms.
+#
+RUN curl -fsSL https://packages.adoptium.net/artifactory/api/gpg/key/public \
+      | gpg --dearmor -o /usr/share/keyrings/adoptium.gpg \
+    && echo "deb [signed-by=/usr/share/keyrings/adoptium.gpg] \
+       https://packages.adoptium.net/artifactory/deb \
+       $(. /etc/os-release && echo ${VERSION_CODENAME}) main" \
+       > /etc/apt/sources.list.d/adoptium.list \
+    && apt-get update \
+    && apt-get install -y --no-install-recommends temurin-21-jdk \
+    && apt-get clean \
+    && rm -rf /var/lib/apt/lists/* \
+    && ln -s "$(dirname $(dirname $(readlink -f $(which java))))" /usr/local/temurin-21
+
+# ── JAVA_HOME ────────────────────────────────────────────────
+# Points to the arch-agnostic symlink created above.
+# Required by: sdkmanager, avdmanager, Gradle, flutter doctor.
+ENV JAVA_HOME=/usr/local/temurin-21
+ENV PATH="${JAVA_HOME}/bin:${PATH}"
+
+# ── Browser: Chrome (amd64) + Chromium (arm64) ───────────────
+RUN ARCH="$(dpkg --print-architecture)" \
+    && if [ "$ARCH" = "amd64" ]; then \
+         curl -fsSL https://dl.google.com/linux/direct/google-chrome-stable_current_amd64.deb \
+           -o /tmp/chrome.deb \
+         && apt-get update \
+         && apt-get install -y --no-install-recommends /tmp/chrome.deb \
+         && rm /tmp/chrome.deb \
+         && apt-get clean \
+         && rm -rf /var/lib/apt/lists/* \
+         && CHROME_BIN=/usr/bin/google-chrome-stable; \
+       elif [ "$ARCH" = "arm64" ]; then \
+         apt-get update \
+         && apt-get install -y --no-install-recommends chromium chromium-driver \
+         && apt-get clean \
+         && rm -rf /var/lib/apt/lists/* \
+         && CHROME_BIN=/usr/bin/chromium; \
+       fi \
+    && echo "export CHROME_EXECUTABLE=${CHROME_BIN}" \
+         > /etc/profile.d/chrome.sh \
+    && chmod 644 /etc/profile.d/chrome.sh
+
+# ── GitHub CLI ───────────────────────────────────────────────
+RUN curl -fsSL https://cli.github.com/packages/githubcli-archive-keyring.gpg \
+      | dd of=/usr/share/keyrings/githubcli-archive-keyring.gpg \
+    && chmod go+r /usr/share/keyrings/githubcli-archive-keyring.gpg \
+    && echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/githubcli-archive-keyring.gpg] https://cli.github.com/packages stable main" \
+      | tee /etc/apt/sources.list.d/github-cli.list > /dev/null \
+    && apt-get update \
+    && apt-get install -y --no-install-recommends gh \
+    && apt-get clean \
+    && rm -rf /var/lib/apt/lists/*
+
+# ── Non-root developer user ──────────────────────────────────
+RUN useradd -ms /bin/bash developer \
+    && usermod -aG sudo developer \
+    && echo "developer ALL=(ALL) NOPASSWD:ALL" >> /etc/sudoers
+
+USER developer
+WORKDIR /home/developer
+
+# ── Android SDK ──────────────────────────────────────────────
+# cmdline-tools build 14742923 is the latest as of April 2026.
+# Check https://developer.android.com/studio#command-tools for newer builds.
+RUN mkdir -p ${ANDROID_SDK_ROOT}/cmdline-tools \
+    && mkdir -p /home/developer/.android \
+    && curl -fsSL \
+       https://dl.google.com/android/repository/commandlinetools-linux-14742923_latest.zip \
+       -o /tmp/cmdline-tools.zip \
+    && unzip -q /tmp/cmdline-tools.zip -d ${ANDROID_SDK_ROOT}/cmdline-tools \
+    && mv ${ANDROID_SDK_ROOT}/cmdline-tools/cmdline-tools \
+          ${ANDROID_SDK_ROOT}/cmdline-tools/latest \
+    && rm /tmp/cmdline-tools.zip \
+    && touch /home/developer/.android/repositories.cfg \
+    && yes | sdkmanager --licenses > /dev/null 2>&1 \
+    && sdkmanager \
+       "platform-tools" \
+       "platforms;android-36" \
+       "build-tools;36.0.0" \
+       "cmdline-tools;latest"
+
+# ── Gradle ───────────────────────────────────────────────────
+# Installed to /opt/gradle — clean, predictable path, no wildcard glob.
+# Pre-cached so the first `flutter build apk` does not re-download it.
+RUN sudo mkdir -p ${GRADLE_HOME} \
+    && curl -fsSL \
+       https://services.gradle.org/distributions/gradle-${GRADLE_VERSION}-bin.zip \
+       -o /tmp/gradle.zip \
+    && sudo unzip -q /tmp/gradle.zip -d ${GRADLE_HOME} \
+    && rm /tmp/gradle.zip \
+    && sudo chown -R developer:developer ${GRADLE_HOME}
+
+# ── Flutter SDK ──────────────────────────────────────────────
+# Clones stable channel — always the latest stable Flutter release.
+# precache targets: android, web, linux only.
+# iOS/macOS/Windows require platform-specific toolchains unavailable in Linux.
+RUN git clone --depth 1 -b stable \
+      https://github.com/flutter/flutter.git ${FLUTTER_ROOT} \
+    && flutter config --no-analytics \
+    && flutter precache --android --web --linux \
+    && yes | flutter doctor --android-licenses > /dev/null 2>&1 \
+    && flutter doctor
+
+# ── Firebase CLI ─────────────────────────────────────────────
+# npm install -g writes to /usr/local/lib/node_modules which is root-owned.
+# Must run as root. Switch back to developer for the Dart step.
+# Version is pinned via FIREBASE_TOOLS_VERSION — update manually when needed.
+# Latest version: https://www.npmjs.com/package/firebase-tools
+USER root
+RUN npm install -g firebase-tools@${FIREBASE_TOOLS_VERSION}
+USER developer
+
+# ── FlutterFire CLI ──────────────────────────────────────────
+# dart pub global writes to PUB_CACHE (/home/developer/.pub-cache).
+# Must run as developer so the cache is owned by the correct user.
+RUN dart pub global activate flutterfire_cli
+
+# ── Shell customization ──────────────────────────────────────
+# Run as root: Starship's install.sh writes to /usr/local/bin.
+# In a Docker build there is no TTY, so sudo cannot prompt for a password —
+# running as root avoids the escalation attempt entirely.
+# After install, fix ownership of developer home config files.
+USER root
+COPY scripts/shell_setup.sh /tmp/shell_setup.sh
+RUN bash /tmp/shell_setup.sh \
+    && chown -R developer:developer /home/developer \
+    && rm /tmp/shell_setup.sh
+USER developer
+
+# ── Default workspace ────────────────────────────────────────
+WORKDIR /workspace
+
+# flutter run -d web-server binds to 0.0.0.0:8080 inside the container.
+# The flutter-template devcontainer.json forwards this port to the host.
+EXPOSE 8080
+
+CMD ["sleep", "infinity"]
