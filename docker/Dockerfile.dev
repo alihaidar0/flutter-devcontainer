@@ -171,6 +171,15 @@ RUN curl -fsSL https://cli.github.com/packages/githubcli-archive-keyring.gpg \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/*
 
+# ── Global npm tools ─────────────────────────────────────────
+# firebase-tools: pinned via FIREBASE_TOOLS_VERSION, updated manually.
+#   Required by: firebase deploy, firebase serve, flutterfire configure.
+#   Latest: https://www.npmjs.com/package/firebase-tools
+#
+# Requires root — npm install -g writes to /usr/local/lib/node_modules.
+RUN npm install -g \
+    firebase-tools@${FIREBASE_TOOLS_VERSION}
+
 # ── Non-root developer user ──────────────────────────────────
 RUN useradd -ms /bin/bash developer \
     && usermod -aG sudo developer \
@@ -220,15 +229,6 @@ RUN git clone --depth 1 -b stable \
     && flutter precache --android --web --linux \
     && yes | flutter doctor --android-licenses > /dev/null 2>&1 \
     && flutter doctor
-
-# ── Firebase CLI ─────────────────────────────────────────────
-# npm install -g writes to /usr/local/lib/node_modules which is root-owned.
-# Must run as root. Switch back to developer for the Dart step.
-# Version is pinned via FIREBASE_TOOLS_VERSION — update manually when needed.
-# Latest version: https://www.npmjs.com/package/firebase-tools
-USER root
-RUN npm install -g firebase-tools@${FIREBASE_TOOLS_VERSION}
-USER developer
 
 # ── FlutterFire CLI ──────────────────────────────────────────
 # dart pub global writes to PUB_CACHE (/home/developer/.pub-cache).

@@ -112,7 +112,7 @@ alias gco="git checkout"
 alias gb="git branch"
 alias gd="git diff"
 
-# ── General ───────────────────────────────────────────────────
+# ── Shell ─────────────────────────────────────────────────────
 alias ll="ls -alFh --color=auto"
 alias la="ls -A --color=auto"
 alias cls="clear"
