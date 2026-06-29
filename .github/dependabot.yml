@@ -1,5 +1,7 @@
 version: 2
+
 updates:
+  # ── GitHub Actions ────────────────────────────────────────
   - package-ecosystem: "github-actions"
     directory: "/"
     schedule:
@@ -18,11 +20,14 @@ updates:
       - "dependencies"
       - "github-actions"
     groups:
-      github-actions-all:
+      github-actions:
         patterns:
           - "*"
     open-pull-requests-limit: 5
 
+  # ── Docker ────────────────────────────────────────────────
+  # Node is intentionally pinned to 24 (Active LTS) and excluded
+  # from all Dependabot updates — it is managed manually.
   - package-ecosystem: "docker"
     directory: "/docker"
     schedule:
