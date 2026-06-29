@@ -10,11 +10,12 @@ on:
 
 jobs:
   sync:
-    name: Sync labels to GitHub
+    name: Sync Labels to GitHub
     runs-on: ubuntu-latest
     permissions:
       issues: write
       contents: read
+
     steps:
       - name: Checkout
         uses: actions/checkout@v7

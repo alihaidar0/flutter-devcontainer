@@ -1,4 +1,2 @@
-# Code owners for the repository
-# These users will be automatically requested for review on all PRs
-
+# All files — request review from the repository owner on every PR.
 * @alihaidar0

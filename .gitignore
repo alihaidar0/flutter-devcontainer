@@ -1,4 +1,4 @@
-# ── OS ───────────────────────────────────────────────────────
+# ── OS artefacts ──────────────────────────────────────────────
 .DS_Store
 Thumbs.db
 Desktop.ini
@@ -15,4 +15,4 @@ Desktop.ini
 !.env.example
 
 # ── Repomix ──────────────────────────────────────────────────
-flutter-devcontainer-code.xml
+*.xml
