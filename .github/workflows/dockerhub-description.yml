@@ -1,3 +1,4 @@
+# .github/workflows/dockerhub-description.yml
 name: Docker Hub Description
 
 on:
@@ -10,6 +11,7 @@ on:
   pull_request:
     branches:
       - main
+      - develop
     paths:
       - "README.md"
       - ".github/workflows/dockerhub-description.yml"
@@ -19,6 +21,7 @@ jobs:
   update-description:
     name: Update Docker Hub Description
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     permissions:
       contents: read
 

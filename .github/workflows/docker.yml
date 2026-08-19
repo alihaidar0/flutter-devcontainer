@@ -1,3 +1,4 @@
+# .github/workflows/docker.yml
 name: Docker
 
 on:
@@ -11,6 +12,7 @@ on:
   pull_request:
     branches:
       - main
+      - develop
     paths:
       - "docker/Dockerfile.dev"
       - "scripts/**"
@@ -42,6 +44,7 @@ jobs:
   build-and-push:
     name: Build & Push Dev Image
     runs-on: ubuntu-latest
+    timeout-minutes: 45
     permissions:
       contents: read
 

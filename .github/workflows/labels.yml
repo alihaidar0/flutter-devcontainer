@@ -12,6 +12,7 @@ jobs:
   sync:
     name: Sync Labels to GitHub
     runs-on: ubuntu-latest
+    timeout-minutes: 5
     permissions:
       issues: write
       contents: read

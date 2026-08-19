@@ -8,6 +8,7 @@
 [![Docker Build](https://github.com/alihaidar0/flutter-devcontainer/actions/workflows/docker.yml/badge.svg)](https://github.com/alihaidar0/flutter-devcontainer/actions/workflows/docker.yml)
 [![Docker Pulls](https://img.shields.io/docker/pulls/alihaidar199527/flutter-devcontainer)](https://hub.docker.com/r/alihaidar199527/flutter-devcontainer)
 [![Image Size](https://img.shields.io/docker/image-size/alihaidar199527/flutter-devcontainer/latest)](https://hub.docker.com/r/alihaidar199527/flutter-devcontainer)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
 ```bash
 docker pull alihaidar199527/flutter-devcontainer:latest
@@ -121,45 +122,51 @@ Apple's build toolchain (`Xcode`, `codesign`, `xcodebuild`) only runs on macOS b
 ```
 flutter-devcontainer/
 ├── .github/
+│   ├── ISSUE_TEMPLATE/
+│   │   ├── bug_report.yml                ← Structured bug report form
+│   │   └── config.yml                    ← Disables blank issues, links to flutter-template
+│   ├── workflows/
+│   │   ├── docker.yml                    ← Builds + pushes image on push/PR to main/develop
+│   │   ├── dockerhub-description.yml     ← Syncs README.md to Docker Hub on push to main
+│   │   └── labels.yml                    ← Syncs labels.yml to GitHub labels
 │   ├── CODEOWNERS                        ← Auto-requests reviewer on every PR
-│   ├── dependabot.yml                    ← Weekly auto-updates for Actions + Docker base image
-│   ├── labels.yml                        ← Label definitions — name, color, description
-│   └── workflows/
-│       ├── docker.yml                    ← Builds + pushes image on push/PR to main
-│       ├── dockerhub-description.yml     ← Syncs README.md to Docker Hub on push to main
-│       └── labels.yml                    ← Syncs labels.yml to GitHub labels
+│   ├── PULL_REQUEST_TEMPLATE.md          ← PR checklist (versions, platforms, scope)
+│   ├── dependabot.yml                    ← Weekly auto-updates for Actions + Docker base image → develop
+│   └── labels.yml                        ← Label definitions — name, color, description
 ├── docker/
 │   └── Dockerfile.dev                    ← The image recipe ← MAIN FILE
 ├── scripts/
 │   └── shell_setup.sh                    ← Installs Starship + bakes aliases into the image
 ├── .dockerignore                         ← Excludes unnecessary files from the build context
+├── .editorconfig                         ← Consistent indentation/line endings across editors
 ├── .gitignore                            ← Ensures secrets are never committed
-└── README.md                             ← This file — also synced to Docker Hub
+├── LICENSE                               ← MIT — free to use, your name stays on it
+├── README.md                             ← This file — also synced to Docker Hub
+├── SECURITY.md                           ← Vulnerability reporting policy
+└── repomix.config.json                   ← Config for generating the AI-readable repo snapshot
 ```
 
 ---
 
 ## GitHub Automation
 
-Five files under `.github/` handle everything automatically.
-
 ### Workflow trigger summary
 
 | File | Trigger | What happens |
 |---|---|---|
 | `workflows/docker.yml` | Push to `main` (`docker/`, `scripts/` changed) | Builds + pushes `:latest` + `:sha-xxx` to Docker Hub |
-| `workflows/docker.yml` | PR targeting `main` (same path filter) | Builds only — validates Dockerfile, never pushes |
+| `workflows/docker.yml` | PR targeting `main` or `develop` (same path filter) | Builds only — validates Dockerfile, never pushes |
 | `workflows/docker.yml` | Manual dispatch | Builds + pushes, with force-rebuild and push toggle |
 | `workflows/dockerhub-description.yml` | Push to `main` (`README.md` changed) | Updates Docker Hub description |
-| `workflows/dockerhub-description.yml` | PR targeting `main` (`README.md` changed) | Runs but skips update until merged |
+| `workflows/dockerhub-description.yml` | PR targeting `main` or `develop` (`README.md` changed) | Runs but skips update until merged |
 | `workflows/dockerhub-description.yml` | Manual dispatch | Forces immediate Docker Hub sync |
 | `workflows/labels.yml` | Push to `main` (`.github/labels.yml` changed) | Syncs all labels to GitHub |
 | `workflows/labels.yml` | Manual dispatch | Bootstrap all labels in one go |
-| `dependabot.yml` | Every Monday 09:00 UTC | Scans Actions + Docker base image, opens PRs against `main` |
+| `dependabot.yml` | Every Monday 09:00 UTC | Scans Actions + Docker base image, opens PRs against `develop` |
 
 ### `workflows/docker.yml`
 
-Builds the multi-platform Docker image (`linux/amd64` + `linux/arm64`) and pushes it to Docker Hub. Path-filtered so a README change never triggers an unnecessary rebuild. PR builds validate the Dockerfile without pushing — only merged pushes publish to Docker Hub. Generates SBOM and provenance attestations on every build.
+Builds the multi-platform Docker image (`linux/amd64` + `linux/arm64`) and pushes it to Docker Hub. Path-filtered so a README change never triggers an unnecessary rebuild. PR builds — including Dependabot PRs opened against `develop` — validate the Dockerfile without pushing; only merged pushes to `main` publish to Docker Hub. Generates SBOM and provenance attestations on every build.
 
 > **Note:** On `pull_request` events (including Dependabot PRs), GitHub withholds repository secrets by design. The workflow handles this correctly — login and push are both skipped on PRs, so the build validates the Dockerfile without needing credentials. The `IMAGE_NAME` is hardcoded (not from a secret) so the tag is always valid.
 
@@ -176,11 +183,11 @@ Keeps GitHub repository labels in sync with `.github/labels.yml`. Labels are ver
 Automatically monitors two ecosystems and opens grouped PRs when updates are found:
 
 - **`github-actions`** — all action versions across every workflow file, grouped into one weekly PR
-- **`docker`** — the `node:24-bookworm-slim` base image in `Dockerfile.dev`
+- **`docker`** — every pinned dependency in the `docker` ecosystem **except Node**, which is intentionally frozen
 
-Node.js is intentionally frozen at version 24 (all update types ignored). Firebase CLI is pinned via `FIREBASE_TOOLS_VERSION` in `Dockerfile.dev` and updated manually — see [Upgrading Firebase CLI](#upgrading-firebase-cli) below.
+All Dependabot PRs target **`develop`**, not `main` — they land on the integration branch first and are promoted to `main` (which triggers the publish workflow) once verified. Node.js is intentionally frozen at version 24 (all update types ignored). Firebase CLI and Gradle are pinned via `ENV` in `Dockerfile.dev` and updated manually — see [Upgrading Firebase CLI](#upgrading-firebase-cli) below.
 
-Both run every Monday at 09:00 UTC and target `main`.
+Both ecosystems run every Monday at 09:00 UTC.
 
 ---
 
@@ -194,14 +201,14 @@ Push to main (Dockerfile or scripts changed)
   → Syncs README to Docker Hub description
   → Job summary written to Actions log
 
-PR targeting main (Dockerfile or scripts changed)
+PR targeting main or develop (Dockerfile or scripts changed)
   → GitHub Actions detects the change
   → Builds linux/amd64 + linux/arm64 to validate
   → Does NOT push — PR check goes green or red
   → Merge when green
 ```
 
-The first build takes ~15–20 minutes (Flutter SDK + Android SDK are large). Subsequent builds complete in 3–5 minutes thanks to GitHub Actions layer caching.
+The first build takes ~15–20 minutes (Flutter SDK + Android SDK are large). Subsequent builds complete in 3–5 minutes thanks to GitHub Actions layer caching. Each job carries an explicit `timeout-minutes` so a stuck runner fails fast instead of hanging.
 
 ---
 
@@ -322,7 +329,7 @@ Node.js is intentionally frozen at 24 LTS via `ARG NODE_VERSION=24` in `docker/D
 ARG NODE_VERSION=26
 ```
 
-Verify the tag exists at [hub.docker.com/_/node/tags](https://hub.docker.com/_/node/tags) first. Commit, push to a branch, open a PR. The PR build validates the new version. Merge when green — image publishes automatically.
+Verify the tag exists at [hub.docker.com/_/node/tags](https://hub.docker.com/_/node/tags) first. Commit, push to a branch off `develop`, open a PR. The PR build validates the new version. Merge to `develop`, then promote to `main` when ready to publish.
 
 ### Upgrading Firebase CLI
 
@@ -336,7 +343,7 @@ ENV GRADLE_VERSION=9.4.1 \
     FIREBASE_TOOLS_VERSION=15.13.0 \
 ```
 
-3. Open a PR, let the build validate, merge.
+3. Open a PR against `develop`, let the build validate, merge.
 
 ### Upgrading Gradle
 
@@ -465,6 +472,14 @@ ssh-add "$env:USERPROFILE\.ssh\id_ed25519"
 
 Flutter SDK + Android SDK together are ~4–5 GB. Ensure Docker Desktop has at least 20 GB of disk image space allocated:
 **Docker Desktop → Settings → Resources → Disk image size**
+
+---
+
+## Contributing
+
+- Open PRs against `develop`, not `main` — `main` is the publish branch and merges from it trigger a live Docker Hub push.
+- Follow the checklist in [`.github/PULL_REQUEST_TEMPLATE.md`](.github/PULL_REQUEST_TEMPLATE.md).
+- Found a vulnerability? See [`SECURITY.md`](SECURITY.md) — do not open a public issue.
 
 ---
 
