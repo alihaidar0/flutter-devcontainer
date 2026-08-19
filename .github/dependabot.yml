@@ -1,3 +1,4 @@
+# .github/dependabot.yml
 version: 2
 
 updates:
@@ -9,7 +10,7 @@ updates:
       day: "monday"
       time: "09:00"
       timezone: "UTC"
-    target-branch: "main"
+    target-branch: "develop"
     rebase-strategy: "auto"
     assignees:
       - "alihaidar0"
@@ -26,8 +27,9 @@ updates:
     open-pull-requests-limit: 5
 
   # ── Docker ────────────────────────────────────────────────
-  # Node is intentionally pinned to 24 (Active LTS) and excluded
-  # from all Dependabot updates — it is managed manually.
+  # Every dependency in the Dockerfile is version-checked EXCEPT
+  # Node — it is intentionally pinned to 24 (Active LTS) and
+  # excluded from all Dependabot updates; upgraded manually.
   - package-ecosystem: "docker"
     directory: "/docker"
     schedule:
@@ -35,7 +37,7 @@ updates:
       day: "monday"
       time: "09:00"
       timezone: "UTC"
-    target-branch: "main"
+    target-branch: "develop"
     rebase-strategy: "auto"
     assignees:
       - "alihaidar0"
