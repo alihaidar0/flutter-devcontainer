@@ -10,10 +10,11 @@
 #    Flutter SDK      — stable channel, always latest
 #    Dart SDK         — bundled with Flutter
 #    Android SDK      — platform-tools, android-36, build-tools 36.0.0
-#    Gradle 9.4.1     — pre-cached at /opt/gradle
+#    Gradle 9.7.1     — pre-cached at /opt/gradle
 #    Java 21          — Eclipse Temurin (Adoptium); OpenJDK 21 is not
 #                       available in Debian 12 APT repositories
 #    Node.js 24 LTS   — required by Firebase CLI
+#    pnpm             — activated via Corepack at build time
 #    Firebase CLI     — pinned, manually tracked
 #    FlutterFire CLI  — installed via dart pub global
 #    Google Chrome    — amd64; Chromium on arm64
@@ -36,8 +37,16 @@ LABEL org.opencontainers.image.authors="Ali Haidar"
 LABEL org.opencontainers.image.source="https://github.com/alihaidar0/flutter-devcontainer"
 
 # ── Pinned versions ───────────────────────────────────────────
-ENV GRADLE_VERSION=9.4.1 \
-    FIREBASE_TOOLS_VERSION=15.13.0 \
+# Last verified: 2026-08-20.
+#   Gradle, firebase-tools, and pnpm confirmed against their official
+#   release channels on this date. cmdline-tools build number and the
+#   Android platform/build-tools levels were NOT re-verified this pass —
+#   check https://developer.android.com/studio#command-tools and
+#   https://developer.android.com/tools/releases/platforms before bumping,
+#   since a wrong cmdline-tools build number breaks the image build outright.
+ENV GRADLE_VERSION=9.7.1 \
+    FIREBASE_TOOLS_VERSION=15.27.0 \
+    PNPM_VERSION=11.22.0 \
     ANDROID_SDK_ROOT=/home/developer/Android/sdk \
     FLUTTER_ROOT=/home/developer/flutter \
     GRADLE_HOME=/opt/gradle \
@@ -88,6 +97,11 @@ RUN apt-get update \
 # openjdk-21-jdk is NOT available in Debian 12 (Bookworm) APT repositories.
 # Debian 12 ships OpenJDK 17 as its highest default version; OpenJDK 21 is
 # only packaged for Debian 13 (Trixie) and above.
+#
+# Note: Temurin 25 is now the latest LTS line (as of late 2025), and is
+# whichjdk.com's current recommendation for new projects. Staying on 21
+# here is a deliberate choice pending a compatibility check against
+# Gradle 9.7.x / AGP / Flutter before bumping — not an oversight.
 #
 # Eclipse Temurin is the Adoptium distribution of OpenJDK. It is:
 #   - TCK-certified and AQAvit quality-verified (production-ready)
@@ -153,6 +167,16 @@ RUN curl -fsSL https://cli.github.com/packages/githubcli-archive-keyring.gpg \
 RUN npm install -g \
     firebase-tools@${FIREBASE_TOOLS_VERSION}
 
+# ── pnpm via Corepack ─────────────────────────────────────────
+# Corepack ships bundled with Node but is dormant until explicitly enabled.
+# Enabling it creates a symlink in /usr/local/bin, which requires root —
+# hence this runs here, before the switch to the non-root `developer` user.
+# Activating pnpm at build time means every generated project's
+# `postCreateCommand: pnpm install` works immediately, with no per-project
+# sudo workaround and no runtime download on first container start.
+RUN corepack enable \
+    && corepack prepare pnpm@${PNPM_VERSION} --activate
+
 # ── Non-root developer user ──────────────────────────────────
 RUN useradd -ms /bin/bash developer \
     && usermod -aG sudo developer \
@@ -162,8 +186,10 @@ USER developer
 WORKDIR /home/developer
 
 # ── Android SDK ──────────────────────────────────────────────
-# cmdline-tools build 14742923 is the latest as of April 2026.
-# Check https://developer.android.com/studio#command-tools for newer builds.
+# cmdline-tools build 14742923 is the latest verified as of April 2026.
+# NOT re-verified in this pass (2026-08-20) — check
+# https://developer.android.com/studio#command-tools for a newer build
+# number before bumping. A wrong number here 404s and fails the build.
 RUN mkdir -p "${ANDROID_SDK_ROOT}/cmdline-tools" /home/developer/.android \
     && curl -fsSL \
        https://dl.google.com/android/repository/commandlinetools-linux-14742923_latest.zip \
