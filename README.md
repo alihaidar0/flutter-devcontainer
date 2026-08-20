@@ -3,7 +3,7 @@
 > Blank-canvas base Docker image for VS Code Dev Containers.
 > One image, shared across all your Flutter projects.
 
-**Flutter (stable) · Dart · Android SDK 36 · Java 21 (Temurin) · Node.js 24 LTS · Firebase CLI · FlutterFire CLI · Gradle 9.4.1 · GitHub CLI · Starship**
+**Flutter (stable) · Dart · Android SDK 36 · Java 21 (Temurin) · Node.js 24 LTS · pnpm (Corepack) · Firebase CLI · FlutterFire CLI · Gradle 9.7.1 · GitHub CLI · Starship**
 
 [![Docker Build](https://github.com/alihaidar0/flutter-devcontainer/actions/workflows/docker.yml/badge.svg)](https://github.com/alihaidar0/flutter-devcontainer/actions/workflows/docker.yml)
 [![Docker Pulls](https://img.shields.io/docker/pulls/alihaidar199527/flutter-devcontainer)](https://hub.docker.com/r/alihaidar199527/flutter-devcontainer)
@@ -51,6 +51,7 @@ When you open a Flutter project that uses this image, the container starts via D
 | **Dart SDK** | bundled with Flutter | Language runtime (included in Flutter) |
 | **Java (Eclipse Temurin)** | 21 | Required by Android build toolchain and Gradle |
 | **Node.js** | 24 LTS (`bookworm-slim`) | Required by Firebase CLI and FlutterFire CLI |
+| **pnpm** | 11.22.0 (via Corepack) | Package manager for repo-level tooling (Husky, commitlint) in consuming projects |
 
 ### Android
 
@@ -60,7 +61,7 @@ When you open a Flutter project that uses this image, the container starts via D
 | **Android Build Tools** | 36.0.0 | APK/AAB compilation |
 | **Android Platform Tools** | latest | `adb`, `fastboot` |
 | **Android Cmdline Tools** | latest (14742923) | `sdkmanager`, `avdmanager` |
-| **Gradle** | 9.4.1 | Android build system — pre-cached in image |
+| **Gradle** | 9.7.1 | Android build system — pre-cached in image |
 
 ### Web & Desktop
 
@@ -74,8 +75,9 @@ When you open a Flutter project that uses this image, the container starts via D
 
 | Tool | Version | Purpose |
 |---|---|---|
-| **Firebase CLI** | 15.13.0 | Firebase project management and deployment |
+| **Firebase CLI** | 15.27.0 | Firebase project management and deployment |
 | **FlutterFire CLI** | latest | Configure Firebase in Flutter projects |
+| **pnpm** | 11.22.0 | Fast, disk-efficient package manager, activated via Corepack at build time |
 | **GitHub CLI** | latest | `gh pr create`, `gh run watch`, `gh auth login` |
 | **openssh-client** | — | `git push` via SSH from inside the container |
 | **Starship** | latest | Terminal prompt — git branch, Flutter version, status |
@@ -185,7 +187,7 @@ Automatically monitors two ecosystems and opens grouped PRs when updates are fou
 - **`github-actions`** — all action versions across every workflow file, grouped into one weekly PR
 - **`docker`** — every pinned dependency in the `docker` ecosystem **except Node**, which is intentionally frozen
 
-All Dependabot PRs target **`develop`**, not `main` — they land on the integration branch first and are promoted to `main` (which triggers the publish workflow) once verified. Node.js is intentionally frozen at version 24 (all update types ignored). Firebase CLI and Gradle are pinned via `ENV` in `Dockerfile.dev` and updated manually — see [Upgrading Firebase CLI](#upgrading-firebase-cli) below.
+All Dependabot PRs target **`develop`**, not `main` — they land on the integration branch first and are promoted to `main` (which triggers the publish workflow) once verified. Node.js is intentionally frozen at version 24 (all update types ignored). Firebase CLI, Gradle, and pnpm are pinned via `ENV` in `Dockerfile.dev` and updated manually — see [Upgrading Firebase CLI](#upgrading-firebase-cli), [Upgrading Gradle](#upgrading-gradle), and [Upgrading pnpm](#upgrading-pnpm) below.
 
 Both ecosystems run every Monday at 09:00 UTC.
 
@@ -339,8 +341,8 @@ Firebase CLI is pinned via `ENV FIREBASE_TOOLS_VERSION` in `docker/Dockerfile.de
 2. Update the env in `docker/Dockerfile.dev`:
 
 ```dockerfile
-ENV GRADLE_VERSION=9.4.1 \
-    FIREBASE_TOOLS_VERSION=15.13.0 \
+ENV GRADLE_VERSION=9.7.1 \
+    FIREBASE_TOOLS_VERSION=15.27.0 \
 ```
 
 3. Open a PR against `develop`, let the build validate, merge.
@@ -350,10 +352,25 @@ ENV GRADLE_VERSION=9.4.1 \
 Update `ENV GRADLE_VERSION` in `docker/Dockerfile.dev`:
 
 ```dockerfile
-ENV GRADLE_VERSION=9.5.0 \
+ENV GRADLE_VERSION=9.8.0 \
 ```
 
 Check the latest stable release at [gradle.org/releases](https://gradle.org/releases). Do not use release candidates.
+
+### Upgrading pnpm
+
+pnpm is activated via Corepack and pinned via `ENV PNPM_VERSION` in `docker/Dockerfile.dev`, updated manually — Dependabot does not track it (Corepack-managed tools aren't detected by the `docker` ecosystem scanner). To upgrade:
+
+1. Check the latest version at [npmjs.com/package/pnpm](https://www.npmjs.com/package/pnpm)
+2. Update the env in `docker/Dockerfile.dev`:
+
+```dockerfile
+ENV PNPM_VERSION=11.22.0
+```
+
+3. Open a PR against `develop`, let the build validate `corepack prepare pnpm@${PNPM_VERSION} --activate` succeeds, merge.
+
+> Corepack is enabled and pnpm is activated as **root**, before the image switches to the non-root `developer` user — `/usr/local/bin` (where the Corepack shim lives) is root-owned, so this step cannot run later as `developer` without `sudo`.
 
 ### Upgrading Android SDK
 
@@ -425,6 +442,10 @@ yes | flutter doctor --android-licenses
 
 This is already handled at image build time but may be needed after an `sdkmanager` update.
 
+### `pnpm: command not found` in a project's postCreateCommand
+
+This means the image was built before Corepack/pnpm activation was added, or the container is running against a stale cached image. Pull the latest image (`docker pull alihaidar199527/flutter-devcontainer:latest`) and rebuild the dev container. If it's still missing, run `corepack --version` inside the container to confirm Corepack itself is present before filing an issue.
+
 ### ADB cannot find device (connecting to host emulator)
 
 Run the Android emulator on your **host** machine, then inside the container:
@@ -492,4 +513,4 @@ Flutter SDK + Android SDK together are ~4–5 GB. Ensure Docker Desktop has at l
 
 ---
 
-*Flutter stable · Dart · Android API 36 · Java 21 Temurin · Node.js 24 LTS · Gradle 9.4.1 · Debian 12 Bookworm · 2026*
+*Flutter stable · Dart · Android API 36 · Java 21 Temurin · Node.js 24 LTS · pnpm 11.22.0 · Gradle 9.7.1 · Debian 12 Bookworm · 2026*
