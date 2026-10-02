@@ -1,0 +1,269 @@
+# .github/workflows/ci.yml
+#
+# Pull-request validation. The single required status check for branch
+# protection is the aggregate job "CI passed" at the bottom of this file.
+name: CI
+
+on:
+  pull_request:
+    branches:
+      - develop
+      - main
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  # Only `develop` (of this repository) may open a pull request into `main`.
+  # GitHub rulesets cannot restrict a PR's source branch, so it is enforced here
+  # and made mandatory through the aggregate "CI passed" check.
+  verify-source-branch:
+    name: Verify source branch
+    if: github.event_name == 'pull_request' && github.base_ref == 'main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    steps:
+      - name: Only develop may target main
+        env:
+          HEAD_REF: ${{ github.head_ref }}
+          HEAD_REPO: ${{ github.event.pull_request.head.repo.full_name }}
+          BASE_REPO: ${{ github.repository }}
+        run: |
+          if [ "$HEAD_REF" != "develop" ] || [ "$HEAD_REPO" != "$BASE_REPO" ]; then
+            echo "::error::Pull requests into main must come from the develop branch of $BASE_REPO (got $HEAD_REPO:$HEAD_REF)."
+            exit 1
+          fi
+          echo "Source branch OK: $HEAD_REPO:$HEAD_REF -> main"
+
+  # Decides whether the (expensive) image build has to run for this change.
+  changes:
+    name: Detect changes
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      image: ${{ steps.filter.outputs.image }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Detect image-affecting changes
+        id: filter
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        run: |
+          if [ "$EVENT_NAME" != "pull_request" ]; then
+            echo "image=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          if git diff --name-only "$BASE_SHA" HEAD | grep -qE '^(docker/|scripts/|\.hadolint\.yaml$|\.github/workflows/ci\.yml$)'; then
+            echo "image=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "image=false" >> "$GITHUB_OUTPUT"
+          fi
+
+  lint:
+    name: Lint
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Hadolint (Dockerfile)
+        uses: hadolint/hadolint-action@06be81baf89a55ffd0e24b8f04a4185738dd3387 # v3.5.0
+        with:
+          dockerfile: docker/Dockerfile.dev
+          config: .hadolint.yaml
+          failure-threshold: warning
+
+      - name: Install ShellCheck
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends shellcheck
+
+      - name: ShellCheck (shell scripts)
+        run: git ls-files -z '*.sh' | xargs -0 shellcheck
+
+      - name: Actionlint (workflows)
+        uses: raven-actions/actionlint@3d39aea434753780c3b3d4a1a31c854b4dbf49d7 # v2.2.0
+
+  # Mirrors the rules in .editorconfig that tooling can verify reliably.
+  format:
+    name: Format
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Check line endings, trailing whitespace and final newline
+        run: |
+          status=0
+
+          crlf=$(git ls-files --eol | awk '$1 == "i/crlf" || $1 == "i/mixed" { print $NF }')
+          if [ -n "$crlf" ]; then
+            echo "::error::CRLF line endings found (LF required):"; echo "$crlf"; status=1
+          fi
+
+          trailing=$(git grep -nIE '[[:space:]]+$' -- . ':!*.md' || true)
+          if [ -n "$trailing" ]; then
+            echo "::error::Trailing whitespace found:"; echo "$trailing"; status=1
+          fi
+
+          missing=""
+          while IFS= read -r -d '' file; do
+            if [ -s "$file" ] && grep -Iq . "$file" && [ "$(tail -c1 "$file" | wc -l)" -eq 0 ]; then
+              missing="$missing$file"$'\n'
+            fi
+          done < <(git ls-files -z)
+          if [ -n "$missing" ]; then
+            echo "::error::Missing final newline:"; printf '%s' "$missing"; status=1
+          fi
+
+          exit "$status"
+
+  # Builds the image natively on both architectures and smoke-tests the toolchain.
+  # Publishing is handled separately by docker.yml on merges to main.
+  build-test:
+    name: Build & test (${{ matrix.arch }})
+    needs: changes
+    if: needs.changes.outputs.image == 'true'
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: amd64
+            runner: ubuntu-latest
+          - arch: arm64
+            runner: ubuntu-24.04-arm
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+
+      - name: Build image (no push)
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
+        with:
+          context: .
+          file: docker/Dockerfile.dev
+          platforms: linux/${{ matrix.arch }}
+          load: true
+          push: false
+          tags: flutter-devcontainer:ci
+          build-args: |
+            NODE_VERSION=24
+          cache-from: type=gha,scope=ci-${{ matrix.arch }}
+          cache-to: type=gha,mode=max,scope=ci-${{ matrix.arch }}
+
+      - name: Smoke test toolchain
+        run: |
+          pin() { grep -oE "$1=[0-9][0-9.]*" docker/Dockerfile.dev | head -1 | cut -d= -f2; }
+          docker run --rm \
+            -e EXPECT_GRADLE="$(pin GRADLE_VERSION)" \
+            -e EXPECT_FIREBASE="$(pin FIREBASE_TOOLS_VERSION)" \
+            flutter-devcontainer:ci bash -c '
+              set -euo pipefail
+              # Non-login shell keeps the image PATH; load CHROME_EXECUTABLE explicitly.
+              . /etc/profile.d/chrome.sh
+              test "$(id -un)" = "developer"
+              flutter --version
+              dart --version
+              java -version
+              node --version | grep -q "^v24\."
+              gradle --version | grep -q "Gradle ${EXPECT_GRADLE}"
+              test "$(firebase --version)" = "${EXPECT_FIREBASE}"
+              # pnpm is resolved lazily through Corepack, so only check the shims exist.
+              corepack --version
+              command -v pnpm
+              flutterfire --version
+              gh --version
+              starship --version
+              adb version
+              test -d "${ANDROID_SDK_ROOT}/platforms/android-36"
+              test -x "${CHROME_EXECUTABLE}"
+              flutter doctor
+            '
+
+      - name: Smoke test shell aliases
+        run: |
+          docker run --rm flutter-devcontainer:ci bash -ic 'type fget frunw ftest fanalyze adbrestart gs'
+
+  # Dependency audit for the npm tooling baked into the image. The repository has
+  # no package.json of its own, so a throw-away lockfile is generated for the
+  # exact firebase-tools version pinned in the Dockerfile and audited.
+  npm-audit:
+    name: npm audit (firebase-tools)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          sparse-checkout: docker/Dockerfile.dev
+          sparse-checkout-cone-mode: false
+          persist-credentials: false
+
+      - name: Audit pinned firebase-tools
+        run: |
+          version="$(grep -oE 'FIREBASE_TOOLS_VERSION=[0-9][0-9.]*' docker/Dockerfile.dev | head -1 | cut -d= -f2)"
+          test -n "$version"
+          mkdir "$RUNNER_TEMP/audit" && cd "$RUNNER_TEMP/audit"
+          npm init -y > /dev/null
+          npm install "firebase-tools@${version}" --package-lock-only --ignore-scripts --no-fund --no-audit
+
+          {
+            echo "## npm audit — firebase-tools@${version}"
+            echo '```'
+            npm audit || true
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+          # Gate on critical advisories only: transitive high/moderate findings
+          # in upstream's dependency tree cannot be fixed from this repository.
+          npm audit --audit-level=critical
+
+  # The one check to require in branch protection. It always runs and fails if
+  # any job above failed or was cancelled; jobs skipped by design count as passed.
+  ci-passed:
+    name: CI passed
+    if: always()
+    needs:
+      - verify-source-branch
+      - changes
+      - lint
+      - format
+      - build-test
+      - npm-audit
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    steps:
+      - name: Evaluate results
+        env:
+          RESULTS: ${{ join(needs.*.result, ' ') }}
+        run: |
+          echo "Job results: $RESULTS"
+          for result in $RESULTS; do
+            case "$result" in
+              success|skipped) ;;
+              *) echo "::error::At least one required job did not succeed."; exit 1 ;;
+            esac
+          done

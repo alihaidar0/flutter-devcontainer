@@ -14,6 +14,14 @@
   color: "0db7ed"
   description: "Updates to the Docker base image or Dockerfile"
 
+- name: "ci"
+  color: "ededed"
+  description: "Changes to CI, release, or other repository automation"
+
+- name: "security"
+  color: "b60205"
+  description: "Security fix or hardening"
+
 # ── Change type ───────────────────────────────────────────────
 - name: "breaking change"
   color: "d73a4a"
@@ -38,6 +46,10 @@
 - name: "documentation"
   color: "0075ca"
   description: "Changes to README, comments, or other documentation only"
+
+- name: "skip-changelog"
+  color: "ededed"
+  description: "Exclude this PR from the auto-generated release notes"
 
 # ── PR state ──────────────────────────────────────────────────
 - name: "ready for review"

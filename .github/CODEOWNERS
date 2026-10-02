@@ -1,2 +1,10 @@
-# All files — request review from the repository owner on every PR.
-* @alihaidar0
+# Default owner — requested for review on every pull request.
+*                    @alihaidar0
+
+# Everything that ends up in the published image, the pipeline that builds it,
+# and the repository's own governance files.
+/docker/             @alihaidar0
+/scripts/            @alihaidar0
+/.github/            @alihaidar0
+/.hadolint.yaml      @alihaidar0
+/docs/               @alihaidar0
