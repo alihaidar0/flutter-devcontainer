@@ -1,0 +1,36 @@
+name: Feature request
+description: Propose a new tool, alias, or improvement for the dev image or its pipeline
+labels:
+  - enhancement
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem or use case
+      description: What are you trying to do that the image does not support today?
+    validations:
+      required: true
+
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed change
+      description: What should be added or changed? Include tool names and versions where relevant.
+    validations:
+      required: true
+
+  - type: dropdown
+    id: scope
+    attributes:
+      label: Does this belong in the base image?
+      description: Project-level packages and application code belong in the project or in flutter-template, not here.
+      options:
+        - Yes - it benefits every Flutter project
+        - Not sure
+    validations:
+      required: true
+
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered
