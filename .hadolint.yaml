@@ -1,0 +1,14 @@
+# Hadolint configuration — used by .github/workflows/ci.yml
+failure-threshold: warning
+
+ignored:
+  # Debian packages are intentionally unpinned: rebuilding the image is how
+  # security updates flow in, and exact apt versions disappear from the mirrors.
+  - DL3008
+  # Several RUN steps pipe curl/yes/echo into another command. The pipelines are
+  # short, each stage is checked by the build, and a failed download breaks the
+  # following extraction step anyway.
+  - DL4006
+  # The unprivileged `developer` user has passwordless sudo (devcontainer
+  # convention) and uses it once to create the root-owned /opt/gradle directory.
+  - DL3004

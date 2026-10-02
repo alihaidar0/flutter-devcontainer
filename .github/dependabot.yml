@@ -3,6 +3,8 @@ version: 2
 
 updates:
   # ── GitHub Actions ────────────────────────────────────────
+  # Actions are pinned to full commit SHAs; Dependabot rewrites the SHA and the
+  # trailing "# vX.Y.Z" comment together.
   - package-ecosystem: "github-actions"
     directory: "/"
     schedule:
@@ -12,6 +14,10 @@ updates:
       timezone: "UTC"
     target-branch: "develop"
     rebase-strategy: "auto"
+    # Wait a week after an upstream release before proposing it, so a
+    # compromised or broken release can be yanked before it reaches a PR.
+    cooldown:
+      default-days: 7
     assignees:
       - "alihaidar0"
     commit-message:
@@ -39,6 +45,8 @@ updates:
       timezone: "UTC"
     target-branch: "develop"
     rebase-strategy: "auto"
+    cooldown:
+      default-days: 7
     assignees:
       - "alihaidar0"
     commit-message:
@@ -47,6 +55,10 @@ updates:
     labels:
       - "dependencies"
       - "docker"
+    groups:
+      docker:
+        patterns:
+          - "*"
     ignore:
       - dependency-name: "node"
         update-types:

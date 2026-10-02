@@ -1,0 +1,52 @@
+# .github/workflows/release.yml
+#
+# Every merge into main (i.e. every develop -> main promotion) is published as a
+# GitHub Release with auto-generated notes. Releases use calendar versions
+# (vYYYY.MM.DD, then vYYYY.MM.DD.1, ...) because the image has no semantic API:
+# Flutter and the Android SDK float with upstream.
+name: Release
+
+on:
+  push:
+    branches:
+      - main
+
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+permissions: {}
+
+jobs:
+  release:
+    name: Publish GitHub Release
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Create release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+          TARGET_SHA: ${{ github.sha }}
+        run: |
+          base="v$(date -u +%Y.%m.%d)"
+          tag="$base"
+          n=1
+          while gh release view "$tag" > /dev/null 2>&1 || git rev-parse -q --verify "refs/tags/$tag" > /dev/null; do
+            tag="$base.$n"
+            n=$((n + 1))
+          done
+          gh release create "$tag" \
+            --target "$TARGET_SHA" \
+            --title "$tag" \
+            --generate-notes \
+            --latest
+          echo "Published release $tag" >> "$GITHUB_STEP_SUMMARY"
