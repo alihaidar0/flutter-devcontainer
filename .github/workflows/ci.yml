@@ -197,7 +197,9 @@ jobs:
               flutterfire --version
               gh --version
               starship --version
-              adb version
+              test -f "${ANDROID_SDK_ROOT}/platform-tools/adb"
+              # Google only ships x86_64 platform-tools for Linux, so adb cannot run on arm64.
+              if [ "$(uname -m)" = "x86_64" ]; then adb version; fi
               test -d "${ANDROID_SDK_ROOT}/platforms/android-36"
               test -x "${CHROME_EXECUTABLE}"
               flutter doctor
