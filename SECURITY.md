@@ -18,8 +18,15 @@ If you find a security issue in this image (e.g. a vulnerable pinned dependency,
 
 You should expect an initial response within 5 business days.
 
+## Supply chain
+
+- Published images are signed with Sigstore (keyless, GitHub OIDC) and carry SBOM and provenance attestations. See [Verifying the image](README.md#verifying-the-image) to check a pulled image.
+- Downloads baked into the image (Android command-line tools, Starship) are verified against pinned SHA-256 checksums, and the base image is pinned by digest.
+- Pull requests scan the built image for critical vulnerabilities that already have a fix, and audit the `firebase-tools` dependency tree exactly as it is installed. Where upstream has not yet picked up a patched transitive dependency, `docker/firebase-tools-overrides.json` applies it. A high or critical advisory with no available fix must be recorded with its reason in `.github/npm-audit-allowlist.txt`; the weekly dependency-drift workflow flags those entries as soon as a fix is published.
+- The image is rebuilt every week so base-image and Flutter updates reach `latest` without a code change.
+
 ## Dependency updates
 
-- **GitHub Actions** and the **Docker base image** are scanned weekly by Dependabot and opened as PRs against `develop` (see `.github/dependabot.yml`).
+- **GitHub Actions** are scanned weekly by Dependabot and opened as PRs against `develop` (see `.github/dependabot.yml`).
 - **Node.js** is intentionally pinned and excluded from automated updates — see [Upgrading Node.js](README.md#upgrading-nodejs).
-- **Firebase CLI** and **Gradle** are pinned via `ENV` in `docker/Dockerfile.dev` and updated manually — see [Updating the Image](README.md#updating-the-image).
+- **Firebase CLI**, **pnpm**, **Starship**, the Android command-line tools build and the **node base image digest** are pinned in `docker/Dockerfile.dev`. A weekly workflow opens an issue when any of them is behind upstream, and they are bumped manually — see [Updating the Image](README.md#updating-the-image).

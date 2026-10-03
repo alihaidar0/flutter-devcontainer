@@ -3,7 +3,7 @@
 > Blank-canvas base Docker image for VS Code Dev Containers.
 > One image, shared across all your Flutter projects.
 
-Flutter (stable) · Dart · Android SDK 36 · Java 21 (Temurin) · Node.js 24 LTS · pnpm (Corepack) · Firebase CLI · FlutterFire CLI · Gradle 9.7.1 · GitHub CLI · Starship
+Flutter (stable) · Dart · Android SDK 36 · Java 21 (Temurin) · Node.js 24 LTS · pnpm (Corepack) · Firebase CLI · FlutterFire CLI · GitHub CLI · Starship
 
 [![Docker Build](https://github.com/alihaidar0/flutter-devcontainer/actions/workflows/docker.yml/badge.svg)](https://github.com/alihaidar0/flutter-devcontainer/actions/workflows/docker.yml)
 [![Docker Pulls](https://img.shields.io/docker/pulls/alihaidar199527/flutter-devcontainer)](https://hub.docker.com/r/alihaidar199527/flutter-devcontainer)
@@ -39,6 +39,22 @@ This image is one half of a two-repo system.
 
 When you open a Flutter project that uses this image, the container starts via Docker Compose with your project folder mounted at `/workspace` and your Git identity and SSH keys available for pushing to GitHub.
 
+The container user is `developer` with **UID/GID 1000** (the base image's `node` account, renamed), which matches the first user on most Linux hosts, so files created in `/workspace` belong to you on the host as well. On Docker Desktop (Windows/macOS) bind-mount ownership is translated by Docker and the UID does not matter. If your Linux user has a different UID, Dev Containers remaps `developer` to it automatically.
+
+The image carries [Dev Container metadata](https://containers.dev/implementors/spec/#image-metadata) (`devcontainer.metadata` label), so a `devcontainer.json` or Compose service that uses it inherits `remoteUser: developer`, the Dart and Flutter VS Code extensions and `dart.flutterSdkPath` without repeating them.
+
+Runtime defaults baked into the image, so consuming projects need no startup workarounds for them:
+
+| Default | Effect |
+| --- | --- |
+| `git config --system safe.directory /workspace` | Git works in the bind-mounted workspace (no "dubious ownership" error), even when `~/.gitconfig` is mounted read-only |
+| `~/.gradle`, `~/.pub-cache`, `~/Android`, `~/.shell_history` exist and belong to `developer` | A named volume mounted over them starts writable instead of root-owned |
+| `CHROME_EXECUTABLE=/usr/local/bin/chrome-browser` | Chrome (amd64) or Chromium (arm64) is found by every process, including IDE-launched ones |
+| `COREPACK_ENABLE_DOWNLOAD_PROMPT=0` | Corepack never waits for an interactive confirmation |
+| pnpm prepared for `developer` (Corepack cache) | `pnpm install` works offline when the project's `packageManager` matches the image's pnpm version |
+
+Named volumes are initialised from the image only when they are first created. After pulling a new image, recreate volumes that cache image content (for example the Android SDK or pub cache) with `docker compose down -v` to pick the new content up.
+
 ---
 
 ## What's Inside
@@ -50,8 +66,8 @@ When you open a Flutter project that uses this image, the container starts via D
 | **Flutter SDK** | stable channel | Flutter framework + Dart SDK |
 | **Dart SDK** | bundled with Flutter | Language runtime (included in Flutter) |
 | **Java (Eclipse Temurin)** | 21 | Required by Android build toolchain and Gradle |
-| **Node.js** | 24 LTS (`bookworm-slim`) | Required by Firebase CLI and FlutterFire CLI |
-| **pnpm** | 11.22.0 (via Corepack) | Package manager for repo-level tooling (Husky, commitlint) in consuming projects |
+| **Node.js** | 24 LTS (Debian 13 `trixie-slim`) | Required by Firebase CLI and FlutterFire CLI |
+| **pnpm** | 11.28.2 (via Corepack) | Package manager for repo-level tooling (Husky, commitlint) in consuming projects |
 
 ### Android
 
@@ -60,8 +76,8 @@ When you open a Flutter project that uses this image, the container starts via D
 | **Android SDK** | API 36 | Latest Android platform |
 | **Android Build Tools** | 36.0.0 | APK/AAB compilation |
 | **Android Platform Tools** | latest | `adb`, `fastboot` |
-| **Android Cmdline Tools** | latest (14742923) | `sdkmanager`, `avdmanager` |
-| **Gradle** | 9.7.1 | Android build system — pre-cached in image |
+| **Android Cmdline Tools** | latest (bootstrapped from build 15859902) | `sdkmanager`, `avdmanager` |
+| **Gradle** | per project | No standalone Gradle is installed: each Flutter project's wrapper (`android/gradlew`) downloads the version Flutter chose into the persisted `~/.gradle` cache on the first build |
 
 ### Web & Desktop
 
@@ -75,12 +91,12 @@ When you open a Flutter project that uses this image, the container starts via D
 
 | Tool | Version | Purpose |
 | --- | --- | --- |
-| **Firebase CLI** | 15.27.0 | Firebase project management and deployment |
+| **Firebase CLI** | 15.32.1 | Firebase project management and deployment |
 | **FlutterFire CLI** | latest | Configure Firebase in Flutter projects |
-| **pnpm** | 11.22.0 | Fast, disk-efficient package manager, activated via Corepack at build time |
+| **pnpm** | 11.28.2 | Fast, disk-efficient package manager, activated via Corepack at build time (cached for the `developer` user — no download on first use) |
 | **GitHub CLI** | latest | `gh pr create`, `gh run watch`, `gh auth login` |
 | **openssh-client** | — | `git push` via SSH from inside the container |
-| **Starship** | latest | Terminal prompt — git branch, Flutter version, status |
+| **Starship** | 1.26.0 | Terminal prompt — git branch, Flutter version, status |
 | **Utilities** | — | curl, git, jq, nano, htop, tree, procps |
 
 ### What is NOT inside
@@ -132,25 +148,34 @@ flutter-devcontainer/
 │   │   ├── main-protect.json             ← Importable ruleset: protects main
 │   │   ├── develop-protect.json          ← Importable ruleset: protects develop
 │   │   └── tags-protect.json             ← Importable ruleset: protects release tags
+│   ├── scripts/
+│   │   ├── audit_gate.py                 ← CI: fails on high/critical npm advisories that are not allowlisted
+│   │   ├── check-sync.sh                 ← CI: README versions/aliases must match the implementation
+│   │   ├── check_drift.py                ← Compares pinned versions with upstream (used by dependency-drift.yml)
+│   │   └── smoke-test.sh                 ← Toolchain smoke test shared by ci.yml and docker.yml
 │   ├── workflows/
-│   │   ├── ci.yml                        ← PR validation: lint, format, build + smoke test, npm audit → "CI passed"
-│   │   ├── docker.yml                    ← Builds + pushes image on push to main
+│   │   ├── ci.yml                        ← PR validation: lint, format, docs sync, build + smoke test + scan, npm audit → "CI passed"
+│   │   ├── dependency-drift.yml          ← Weekly: reports pinned tool versions that are behind upstream
+│   │   ├── docker.yml                    ← Builds natively per arch, tests, pushes, signs (main, weekly, manual)
 │   │   ├── dockerhub-description.yml     ← Syncs README.md to Docker Hub on push to main
 │   │   ├── labels.yml                    ← Syncs labels.yml to GitHub labels
-│   │   └── release.yml                   ← Publishes a GitHub Release on every push to main
+│   │   └── release.yml                   ← Publishes a GitHub Release when a promotion changes the image
 │   ├── CODEOWNERS                        ← Auto-requests reviewer on every PR
+│   ├── npm-audit-allowlist.txt           ← Accepted high/critical advisories, each with its reason
 │   ├── PULL_REQUEST_TEMPLATE.md          ← PR checklist (versions, platforms, scope)
-│   ├── dependabot.yml                    ← Weekly grouped updates for Actions + Docker base image → develop
+│   ├── dependabot.yml                    ← Weekly grouped updates for GitHub Actions + Docker base image → develop
 │   ├── labels.yml                        ← Label definitions — name, color, description
 │   └── release.yml                       ← Release-notes categories (by PR label)
 ├── docker/
-│   └── Dockerfile.dev                    ← The image recipe ← MAIN FILE
+│   ├── Dockerfile.dev                    ← The image recipe ← MAIN FILE
+│   └── firebase-tools-overrides.json     ← npm overrides that patch firebase-tools' transitive dependencies
 ├── docs/
 │   └── github-setup.md                   ← Repository settings, rulesets and branch workflow
 ├── scripts/
-│   └── shell_setup.sh                    ← Installs Starship + bakes aliases into the image
-├── .dockerignore                         ← Excludes unnecessary files from the build context
+│   └── shell_setup.sh                    ← Installs Starship (pinned + verified) and bakes aliases into the image
+├── .dockerignore                         ← Allowlist: only what the Dockerfile COPYs enters the build context
 ├── .editorconfig                         ← Consistent indentation/line endings across editors
+├── .gitattributes                        ← Forces LF line endings in every checkout
 ├── .gitignore                            ← Ensures secrets are never committed
 ├── .hadolint.yaml                        ← Dockerfile lint rules used by CI
 ├── LICENSE                               ← MIT — free to use, your name stays on it
@@ -167,16 +192,18 @@ flutter-devcontainer/
 
 | File | Trigger | What happens |
 | --- | --- | --- |
-| `workflows/ci.yml` | PR targeting `develop` or `main` | Lint, format, build + smoke test (`amd64` + `arm64`), `npm audit`, then the aggregate **CI passed** check |
+| `workflows/ci.yml` | PR targeting `develop` or `main` | Lint, format, docs sync, build + smoke test + vulnerability scan (`amd64` + `arm64`), `npm audit`, then the aggregate **CI passed** check |
 | `workflows/ci.yml` | Manual dispatch | Same checks on the selected branch |
-| `workflows/docker.yml` | Push to `main` (`docker/`, `scripts/` changed) | Builds + pushes `:latest` + `:sha-xxx` to Docker Hub |
-| `workflows/docker.yml` | Manual dispatch (from `main`) | Builds + pushes, with force-rebuild and push toggle |
+| `workflows/docker.yml` | Push to `main` (`docker/`, `scripts/` changed) | Builds each architecture natively, smoke-tests, pushes `:latest`, `:sha-xxx`, a date tag and a Flutter-version tag, and signs the image |
+| `workflows/docker.yml` | Every Monday 05:00 UTC | Same pipeline, so the published image picks up the newest Flutter stable and base-image patches |
+| `workflows/docker.yml` | Manual dispatch (from `main`) | Same pipeline, with force-rebuild and push toggle |
+| `workflows/dependency-drift.yml` | Every Monday 06:00 UTC / manual | Opens, updates or closes one issue listing pinned tool versions that are behind upstream |
 | `workflows/dockerhub-description.yml` | Push to `main` (`README.md` changed) | Updates Docker Hub description |
 | `workflows/dockerhub-description.yml` | Manual dispatch (from `main`) | Forces immediate Docker Hub sync |
-| `workflows/release.yml` | Push to `main` | Publishes a GitHub Release (`vYYYY.MM.DD`) with generated notes |
+| `workflows/release.yml` | Push to `main` (`docker/`, `scripts/` changed) | Publishes a GitHub Release (`vYYYY.MM.DD`) with generated notes |
 | `workflows/labels.yml` | Push to `main` (`.github/labels.yml` changed) | Syncs all labels to GitHub |
 | `workflows/labels.yml` | Manual dispatch | Bootstrap all labels in one go |
-| `dependabot.yml` | Every Monday 09:00 UTC | Scans Actions + Docker base image, opens grouped PRs against `develop` |
+| `dependabot.yml` | Every Monday 09:00 UTC | Scans GitHub Actions and the Docker base image, opens grouped PRs against `develop` |
 
 Every third-party action is pinned to a full commit SHA (with a `# vX.Y.Z` comment) and every workflow declares least-privilege `permissions:`. Repository settings, rulesets and the branch workflow are documented in [`docs/github-setup.md`](docs/github-setup.md).
 
@@ -185,17 +212,24 @@ Every third-party action is pinned to a full commit SHA (with a `# vX.Y.Z` comme
 Runs on every pull request into `develop` or `main`:
 
 - **Verify source branch** — a PR into `main` must come from `develop` of this repository.
-- **Lint** — Hadolint (`.hadolint.yaml`), ShellCheck and actionlint.
+- **Lint** — Hadolint (`.hadolint.yaml`), ShellCheck, a syntax check of the Python helper, and actionlint.
 - **Format** — LF line endings, no trailing whitespace, final newline (the rules in `.editorconfig` that tooling can check reliably).
-- **Build & test** — builds the image natively on `linux/amd64` and `linux/arm64` (no push) and smoke-tests the toolchain: Gradle and Firebase CLI versions against the pins in `Dockerfile.dev`, Node 24, Android platform, Chrome/Chromium, `flutter doctor` and the shell aliases. Skipped when a PR touches neither `docker/`, `scripts/` nor the CI configuration.
-- **npm audit** — audits the exact `firebase-tools` version pinned in the Dockerfile. Critical advisories fail the check; the full report is written to the job summary.
+- **Docs sync** — `.github/scripts/check-sync.sh` fails when `README.md` and the implementation disagree: a version pinned in `Dockerfile.dev` that the README does not mention, a Node major that differs between the Dockerfile and the workflows, or an alias missing from (or extra in) the README tables.
+- **Build & test** — builds the image natively on `linux/amd64` and `linux/arm64` (no push) and runs `.github/scripts/smoke-test.sh`: Firebase CLI, pnpm and Starship versions against the pins in `Dockerfile.dev` (pnpm is resolved with the network disabled, proving the build-time cache works), the container user (UID/GID 1000, passwordless `sudo`), writable cache directories, Git's trust of `/workspace`, Node 24, Android platform, Chrome/Chromium, `flutter doctor`, the shell aliases and the Dev Container metadata label. On `amd64` the image is then scanned with Grype; a **critical** vulnerability that already has a fix fails the check. Skipped when a PR touches neither `docker/`, `scripts/`, the smoke test nor the CI configuration.
+- **npm audit** — audits the `firebase-tools` tree exactly as the image installs it (pinned version plus `docker/firebase-tools-overrides.json`). Any **high or critical** advisory fails the check unless `.github/npm-audit-allowlist.txt` records why it is accepted; moderate and low findings are listed for information. The result and the full report are written to the job summary.
 - **CI passed** — the single aggregate check required by branch protection. It fails if any job failed or was cancelled; jobs skipped by design count as passed.
 
 ### `workflows/docker.yml`
 
-Builds the multi-platform Docker image (`linux/amd64` + `linux/arm64`) and pushes it to Docker Hub. Path-filtered so a README change never triggers an unnecessary rebuild. Runs only on merges to `main` and manual dispatch — pull requests are validated by `ci.yml` instead. Generates SBOM and provenance attestations on every build. The job uses the `docker-hub` environment, which holds the Docker Hub credentials and is restricted to `main`.
+Builds and publishes the multi-platform image (`linux/amd64` + `linux/arm64`) to Docker Hub. Each architecture is built **natively** on its own runner (no QEMU emulation), smoke-tested with the same script the pull requests use, and only then pushed by digest. A final job merges both digests into one manifest list, applies the tags and signs the result with a keyless [Sigstore](https://www.sigstore.dev/) signature (see [Verifying the image](#verifying-the-image)). Every build carries SBOM and maximum-detail provenance attestations, and the layer cache lives in `buildcache-<arch>` tags in the registry rather than in the size-limited GitHub Actions cache.
+
+The push trigger is path-filtered so a README change never rebuilds the image. The workflow also runs every Monday, because Flutter tracks the stable channel and the base image receives security patches even when this repository does not change. Pull requests are validated by `ci.yml` instead. The jobs use the `docker-hub` environment, which holds the Docker Hub credentials and is restricted to `main`.
 
 > **Note:** `IMAGE_NAME` is hardcoded (not read from a secret) so the image tag is always valid.
+
+### `workflows/dependency-drift.yml`
+
+Dependabot cannot see the tools pinned in `Dockerfile.dev`, so this workflow compares them with their official release channels every Monday and keeps **one** issue up to date. It covers firebase-tools, pnpm (within its pinned major line — a newer major is noted separately), Starship, the Android cmdline-tools build, the digest of the `node` base image, and every advisory accepted in `.github/npm-audit-allowlist.txt` (reported as soon as a patched release exists). The issue closes itself when every pin is current. Bump what it lists as described in [Updating the Image](#updating-the-image).
 
 ### `workflows/dockerhub-description.yml`
 
@@ -203,7 +237,7 @@ Syncs `README.md` to the Docker Hub repository description page on every `README
 
 ### `workflows/release.yml`
 
-Publishes a GitHub Release on every push to `main`, i.e. on every `develop` → `main` promotion. Releases use calendar versions (`vYYYY.MM.DD`, then `vYYYY.MM.DD.1`, …) because the image has no semantic API — Flutter and the Android SDK float with upstream. Notes are generated from the merged pull requests and grouped by label (`.github/release.yml`).
+Publishes a GitHub Release when a `develop` → `main` promotion changes the image (same path filter as `docker.yml`), so a documentation-only promotion does not produce a release. Releases use calendar versions (`vYYYY.MM.DD`, then `vYYYY.MM.DD.1`, …) because the image has no semantic API — Flutter and the Android SDK float with upstream. The image published that day also carries the matching `YYYY.MM.DD` tag. Notes are generated from the merged pull requests and grouped by label (`.github/release.yml`).
 
 ### `workflows/labels.yml`
 
@@ -214,9 +248,9 @@ Keeps GitHub repository labels in sync with `.github/labels.yml`. Labels are ver
 Automatically monitors two ecosystems and opens grouped PRs when updates are found:
 
 - **`github-actions`** — all action versions across every workflow file, grouped into one weekly PR
-- **`docker`** — every pinned dependency in the `docker` ecosystem **except Node**, which is intentionally frozen
+- **`docker`** — the Docker ecosystem scan of `docker/`, with every update to the `node` base image ignored because Node is intentionally frozen
 
-All Dependabot PRs target **`develop`**, not `main` — they land on the integration branch first and are promoted to `main` (which triggers the publish workflow) once verified. A 7-day cooldown delays each upstream release before it is proposed. Node.js is intentionally frozen at version 24 (all update types ignored). Firebase CLI, Gradle, and pnpm are pinned via `ENV` in `Dockerfile.dev` and updated manually — see [Upgrading Firebase CLI](#upgrading-firebase-cli), [Upgrading Gradle](#upgrading-gradle), and [Upgrading pnpm](#upgrading-pnpm) below.
+All Dependabot PRs target **`develop`**, not `main` — they land on the integration branch first and are promoted to `main` (which triggers the publish workflow) once verified. A 7-day cooldown delays each upstream release before it is proposed. Node.js is intentionally frozen at version 24 (all update types ignored). Firebase CLI, pnpm, Starship, the Android cmdline-tools build and the node base digest are pinned in `Dockerfile.dev` and bumped manually; the [dependency-drift workflow](#workflowsdependency-driftyml) tells you when they fall behind — see [Updating the Image](#updating-the-image).
 
 Both ecosystems run every Monday at 09:00 UTC.
 
@@ -225,22 +259,25 @@ Both ecosystems run every Monday at 09:00 UTC.
 ## How the Build Works
 
 ```text
-Push to main (Dockerfile or scripts changed)
-  → GitHub Actions detects the change
-  → Builds linux/amd64 + linux/arm64 in parallel using layer cache
-  → Pushes :latest and :sha-<commit> to Docker Hub
-  → Syncs README to Docker Hub description
+Push to main (Dockerfile or scripts changed), every Monday, or manual run
+  → Builds linux/amd64 and linux/arm64 in parallel, each on a native runner
+  → Smoke-tests each build (same script as the pull requests)
+  → Pushes each architecture by digest, with SBOM + provenance attestations
+  → Merges the digests into one manifest list and tags it
+    (:latest, :YYYY.MM.DD, :flutter-<version>, plus :sha-<commit> on pushes)
+  → Signs the manifest list with a keyless Sigstore signature
   → Job summary written to Actions log
 
 PR targeting develop or main (ci.yml)
-  → Lints, format-checks and audits on every PR
+  → Lints, format-checks, checks README sync and audits on every PR
   → If Dockerfile, scripts or CI config changed: builds natively on
-    linux/amd64 and linux/arm64 and smoke-tests the toolchain (no push)
+    linux/amd64 and linux/arm64, smoke-tests the toolchain and scans the
+    amd64 image (no push)
   → "CI passed" goes green or red
   → Merge when green
 ```
 
-The first build takes ~15–20 minutes (Flutter SDK + Android SDK are large). Subsequent builds complete in 3–5 minutes thanks to GitHub Actions layer caching. Each job carries an explicit `timeout-minutes` so a stuck runner fails fast instead of hanging.
+The first build takes ~15–20 minutes (Flutter SDK + Android SDK are large). Subsequent builds are much faster thanks to the per-architecture layer cache in the registry. Each job carries an explicit `timeout-minutes` so a stuck runner fails fast instead of hanging.
 
 ---
 
@@ -259,8 +296,27 @@ Docker pulls the correct platform automatically.
 
 | Tag | Published when |
 | --- | --- |
-| `latest` | Every push to `main` |
-| `sha-xxxxxxx` | Every build — pin to this for rollback |
+| `latest` | Every publish — always the newest build |
+| `sha-xxxxxxx` | Only when a push to `main` changes the image — immutable per commit; pin to this for rollback. Weekly and manual rebuilds do not create or overwrite it |
+| `flutter-X.Y.Z` | Every publish — the Flutter release baked into the image (for example `flutter-3.47.0`). Pin to this to stay on a Flutter version |
+| `YYYY.MM.DD` | Every publish — the day's build, matching the GitHub Release date |
+| `buildcache-amd64`, `buildcache-arm64` | Internal layer cache for the publish workflow — not meant to be pulled |
+
+`latest`, `flutter-X.Y.Z` and `YYYY.MM.DD` are moving tags (a second build with the same Flutter release or on the same day replaces them). Only `sha-xxxxxxx` and the image digest are immutable. To pin a weekly rebuild, use its digest (`alihaidar199527/flutter-devcontainer@sha256:…`).
+
+---
+
+## Verifying the image
+
+Published images are signed with [Cosign](https://github.com/sigstore/cosign) using GitHub's OIDC identity (keyless), and carry SBOM and provenance attestations. To check that an image was built by this repository's publish workflow on `main`:
+
+```bash
+cosign verify alihaidar199527/flutter-devcontainer:latest \
+  --certificate-oidc-issuer https://token.actions.githubusercontent.com \
+  --certificate-identity-regexp '^https://github.com/alihaidar0/flutter-devcontainer/\.github/workflows/docker\.yml@refs/heads/main$'
+```
+
+Inspect the attestations with `docker buildx imagetools inspect alihaidar199527/flutter-devcontainer:latest --format '{{ json .Provenance }}'` (or `.SBOM`).
 
 ---
 
@@ -303,7 +359,6 @@ All aliases are defined in `scripts/shell_setup.sh` and baked into the image.
 | --- | --- |
 | `dpub` | `dart pub` |
 | `dget` | `dart pub get` |
-| `daudit` | `dart pub audit` |
 | `dformat` | `dart format .` |
 | `danalyze` | `dart analyze` |
 | `dtest` | `dart test` |
@@ -345,62 +400,63 @@ All aliases are defined in `scripts/shell_setup.sh` and baked into the image.
 | `gb` | `git branch` |
 | `gd` | `git diff` |
 
+### General
+
+| Alias | Expands to |
+| --- | --- |
+| `ll` | `ls -alFh --color=auto` |
+| `la` | `ls -A --color=auto` |
+| `cls` | `clear` |
+
 ---
 
 ## Updating the Image
 
+The weekly [dependency-drift](#workflowsdependency-driftyml) issue lists every pin below that has fallen behind. For each bump: open a topic branch off `develop`, change the pin (and its checksum where one exists), update this README in the same PR, refresh the "Last verified" date above the `ENV` block, and let CI validate. Merge to `develop`, then promote to `main` when ready to publish. The **Docs sync** check fails the PR if the README and the Dockerfile disagree.
+
 ### Upgrading Flutter
 
-Flutter is installed via `git clone -b stable`, so it always tracks the latest stable release at build time. To get a new Flutter version, trigger a manual rebuild from the **Actions** tab or push any change to `docker/` or `scripts/`.
+Flutter is installed via `git clone -b stable`, so it always tracks the latest stable release at build time, and the weekly publish run picks up a new stable release automatically. To get it sooner, trigger the **Docker** workflow from the **Actions** tab (use *Bypass layer cache* to force a fresh clone). The resulting image is tagged `flutter-X.Y.Z` so a project can pin to it.
 
 ### Upgrading Node.js
 
-Node.js is intentionally frozen at 24 LTS via `ARG NODE_VERSION=24` in `docker/Dockerfile.dev`. Dependabot is configured to ignore all Node update types so it will not open PRs for Node upgrades. To upgrade Node, update the ARG manually:
+Node.js is intentionally frozen at 24 LTS via `ARG NODE_VERSION=24` in `docker/Dockerfile.dev`. Dependabot is configured to ignore all Node update types so it will not open PRs for Node upgrades. The base image is additionally pinned by digest (`ARG NODE_IMAGE_DIGEST`), so a build always starts from a known base; the drift workflow reports when the tag has moved to a newer digest.
+
+To refresh the digest within Node 24 (OS security patches), copy the new index digest of `node:24-trixie-slim` from [hub.docker.com/_/node/tags](https://hub.docker.com/_/node/tags) into `NODE_IMAGE_DIGEST`.
+
+To move to another Node major version, change **both** the tag and the digest, and keep `NODE_VERSION` in `ci.yml` and `docker.yml` in step:
 
 ```dockerfile
 ARG NODE_VERSION=26
+ARG NODE_IMAGE_DIGEST=sha256:<digest of node:26-trixie-slim>
 ```
 
-Verify the tag exists at [hub.docker.com/_/node/tags](https://hub.docker.com/_/node/tags) first. Commit, push to a branch off `develop`, open a PR. The PR build validates the new version. Merge to `develop`, then promote to `main` when ready to publish.
+Verify the tag exists at [hub.docker.com/_/node/tags](https://hub.docker.com/_/node/tags) first. Newer Node lines may no longer bundle Corepack, so check that `corepack enable` still works.
 
 ### Upgrading Firebase CLI
 
-Firebase CLI is pinned via `ENV FIREBASE_TOOLS_VERSION` in `docker/Dockerfile.dev` and is **updated manually** — Dependabot does not track it. To upgrade:
-
-1. Check the latest version at [npmjs.com/package/firebase-tools](https://www.npmjs.com/package/firebase-tools)
-2. Update the env in `docker/Dockerfile.dev`:
+Firebase CLI is pinned via `ENV FIREBASE_TOOLS_VERSION` in `docker/Dockerfile.dev`. Check the latest version at [npmjs.com/package/firebase-tools](https://www.npmjs.com/package/firebase-tools) and update the env:
 
 ```dockerfile
-ENV GRADLE_VERSION=9.7.1 \
-    FIREBASE_TOOLS_VERSION=15.27.0 \
+ENV FIREBASE_TOOLS_VERSION=15.32.1 \
+    PNPM_VERSION=11.28.2 \
 ```
 
-3. Open a PR against `develop`, let the build validate, merge.
+firebase-tools is installed into its own prefix (`/opt/firebase-tools`, with `firebase` symlinked into `/usr/local/bin`) instead of with `npm install -g`, because only a local install honours npm `overrides`. `docker/firebase-tools-overrides.json` pins patched versions of transitive dependencies that upstream has not picked up yet (today `basic-ftp` and the `uuid` used by `gaxios`). After a version bump:
 
-### Upgrading Gradle
-
-Update `ENV GRADLE_VERSION` in `docker/Dockerfile.dev`:
-
-```dockerfile
-ENV GRADLE_VERSION=9.8.0 \
-```
-
-Check the latest stable release at [gradle.org/releases](https://gradle.org/releases). Do not use release candidates.
+1. Read the **npm audit** job summary of the pull request. If an advisory is now fixed upstream, delete its override.
+1. If a new high or critical advisory appears with a patched release, add an override for it, and check that the CLI still loads (`firebase --help`, `firebase deploy --help`).
+1. If no patched release exists, add the advisory ID and the reason to `.github/npm-audit-allowlist.txt`. The weekly drift issue reports when a fix is published.
 
 ### Upgrading pnpm
 
-pnpm is activated via Corepack and pinned via `ENV PNPM_VERSION` in `docker/Dockerfile.dev`, updated manually — Dependabot does not track it (Corepack-managed tools aren't detected by the `docker` ecosystem scanner). To upgrade:
-
-1. Check the latest version at [npmjs.com/package/pnpm](https://www.npmjs.com/package/pnpm)
-2. Update the env in `docker/Dockerfile.dev`:
+pnpm is activated via Corepack and pinned via `ENV PNPM_VERSION` in `docker/Dockerfile.dev`. The image stays on the pnpm 11 line; the drift workflow mentions a newer major separately because it needs its own review. Check the latest 11.x version at [npmjs.com/package/pnpm](https://www.npmjs.com/package/pnpm) and update the env:
 
 ```dockerfile
-ENV PNPM_VERSION=11.22.0
+ENV PNPM_VERSION=11.28.2
 ```
 
-3. Open a PR against `develop`, let the build validate `corepack prepare pnpm@${PNPM_VERSION} --activate` succeeds, merge.
-
-> Corepack is enabled and pnpm is activated as **root**, before the image switches to the non-root `developer` user — `/usr/local/bin` (where the Corepack shim lives) is root-owned, so this step cannot run later as `developer` without `sudo`.
+> `corepack enable` runs as **root** (it writes shims to the root-owned `/usr/local/bin`), but `corepack prepare pnpm@${PNPM_VERSION} --activate` runs as the non-root `developer` user. Corepack caches the download for the user that runs it, so preparing pnpm as `developer` is what makes `pnpm` work offline for that user. CI proves this by resolving pnpm with `COREPACK_ENABLE_NETWORK=0`.
 
 ### Upgrading Android SDK
 
@@ -418,13 +474,26 @@ Check new API levels at [developer.android.com/tools/releases/platforms](https:/
 
 ### Upgrading Android Cmdline Tools
 
-The cmdline-tools zip URL contains a build number (`14742923`). When Google releases a new version, update the URL in `docker/Dockerfile.dev`:
+The cmdline-tools zip is a bootstrap: its URL contains a build number (`15859902`), and `sdkmanager` then installs `cmdline-tools;latest` over it. When Google publishes a new build, update both build args in `docker/Dockerfile.dev`:
 
 ```dockerfile
-https://dl.google.com/android/repository/commandlinetools-linux-NEW_BUILD_latest.zip
+ARG CMDLINE_TOOLS_BUILD=<new build number>
+ARG CMDLINE_TOOLS_SHA256=<SHA-256 shown next to that download>
 ```
 
-Find the latest build number on the [Android Studio download page](https://developer.android.com/studio#command-tools).
+Copy the build number and the SHA-256 together from the [Android Studio download page](https://developer.android.com/studio#command-tools) ("Command line tools only", Linux). A wrong build number 404s the build and a wrong checksum fails it on purpose.
+
+### Upgrading Starship
+
+Starship is installed from a pinned release tarball, not an install script. Update the three args above `COPY scripts/shell_setup.sh` in `docker/Dockerfile.dev`:
+
+```dockerfile
+ARG STARSHIP_VERSION=1.26.0
+ARG STARSHIP_SHA256_AMD64=<contents of starship-x86_64-unknown-linux-musl.tar.gz.sha256>
+ARG STARSHIP_SHA256_ARM64=<contents of starship-aarch64-unknown-linux-musl.tar.gz.sha256>
+```
+
+Both checksum files are published as assets of the [GitHub release](https://github.com/starship/starship/releases).
 
 ### Adding a system package
 
@@ -443,11 +512,25 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 **Symptom:** `denied: requested access to the resource is denied`
 
-1. Go to **Settings → Secrets and variables → Actions**
-2. Confirm both `DOCKERHUB_USERNAME` and `DOCKERHUB_TOKEN` are present
-3. Confirm the token has **Read, Write & Delete** scope — Read-only tokens cannot push
-4. If expired: Docker Hub → **Account Settings → Personal access tokens** → delete → create new → update secret
-5. Re-run from the **Actions** tab
+1. Go to **Settings → Environments → `docker-hub`**
+1. Confirm both `DOCKERHUB_USERNAME` and `DOCKERHUB_TOKEN` are present as environment secrets
+1. Confirm the token has **Read, Write & Delete** scope — Read-only tokens cannot push
+1. If expired: Docker Hub → **Account Settings → Personal access tokens** → delete → create new → update the secret
+1. Re-run from the **Actions** tab
+
+### Permission denied on `/workspace` or in a named volume
+
+Images published before the user-ID change ran `developer` as UID 1001. A named volume created with such an image stays owned by 1001, and a Linux host user with UID 1000 could not write the project files. Current images use UID/GID 1000.
+
+1. Check the user inside the container: `id` must show `uid=1000(developer) gid=1000(developer)`. If it does not, pull the current image and rebuild the dev container.
+1. Recreate volumes made by an older image: `docker compose down -v`, then start the container again. Only cached data is lost (pub packages, Gradle artifacts, shell history).
+1. If your host user is not UID 1000, make sure `updateRemoteUserUID` is not set to `false` in `devcontainer.json`; the default remaps the container user to yours.
+
+### Build fails — checksum mismatch
+
+**Symptom:** `sha256sum: WARNING: 1 computed checksum did NOT match` while building the Android or Starship layer.
+
+A pinned download no longer matches the checksum recorded in `docker/Dockerfile.dev`. This is the check doing its job: either the version and checksum were bumped separately (copy both from the official source — see [Updating the Image](#updating-the-image)), or the upstream file changed unexpectedly, in which case do not bump the checksum until you know why.
 
 ### `flutter doctor` shows Android licenses not accepted
 
@@ -462,6 +545,8 @@ This is already handled at image build time but may be needed after an `sdkmanag
 ### `pnpm: command not found` in a project's postCreateCommand
 
 This means the image was built before Corepack/pnpm activation was added, or the container is running against a stale cached image. Pull the latest image (`docker pull alihaidar199527/flutter-devcontainer:latest`) and rebuild the dev container. If it's still missing, run `corepack --version` inside the container to confirm Corepack itself is present before filing an issue.
+
+If `pnpm` starts downloading itself on first use, the image predates the build-time cache fix (pnpm is now prepared as the `developer` user). Pull a current image, or check with `COREPACK_ENABLE_NETWORK=0 pnpm --version`, which must print the pinned version.
 
 ### ADB cannot find device (connecting to host emulator)
 
@@ -531,4 +616,4 @@ Flutter SDK + Android SDK together are ~4–5 GB. Ensure Docker Desktop has at l
 
 ---
 
-Flutter stable · Dart · Android API 36 · Java 21 Temurin · Node.js 24 LTS · pnpm 11.22.0 · Gradle 9.7.1 · Debian 12 Bookworm · 2026
+Flutter stable · Dart · Android API 36 · Java 21 Temurin · Node.js 24 LTS · pnpm 11.28.2 · Debian 13 Trixie · 2026
