@@ -9,6 +9,3 @@ ignored:
   # short, each stage is checked by the build, and a failed download breaks the
   # following extraction step anyway.
   - DL4006
-  # The unprivileged `developer` user has passwordless sudo (devcontainer
-  # convention) and uses it once to create the root-owned /opt/gradle directory.
-  - DL3004

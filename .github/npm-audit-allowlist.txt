@@ -1,0 +1,9 @@
+# Advisories the "npm audit" CI job accepts although they are high or critical.
+#
+# Format: one GitHub advisory ID per line, then the reason. Lines starting with
+# "#" are comments. An advisory belongs here only when no patched release
+# exists, or when the patch cannot be applied safely from this repository. The
+# weekly dependency-drift workflow reports an entry as soon as a patched
+# version appears, and the CI job warns about entries that no longer match.
+
+GHSA-vfj7-8cjw-p6xm  braces: stack exhaustion on deeply nested glob patterns. No patched version exists (every release up to the latest, 3.0.3, is affected). Reached through chokidar, which firebase-tools uses to watch the developer's own project files; it never processes untrusted patterns. Revisit when a fix ships.

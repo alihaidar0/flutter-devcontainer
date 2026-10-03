@@ -25,7 +25,7 @@ jobs:
   verify-source-branch:
     name: Verify source branch
     if: github.event_name == 'pull_request' && github.base_ref == 'main'
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 2
     steps:
       - name: Only develop may target main
@@ -43,7 +43,7 @@ jobs:
   # Decides whether the (expensive) image build has to run for this change.
   changes:
     name: Detect changes
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 5
     outputs:
       image: ${{ steps.filter.outputs.image }}
@@ -64,7 +64,7 @@ jobs:
             echo "image=true" >> "$GITHUB_OUTPUT"
             exit 0
           fi
-          if git diff --name-only "$BASE_SHA" HEAD | grep -qE '^(docker/|scripts/|\.hadolint\.yaml$|\.github/workflows/ci\.yml$)'; then
+          if git diff --name-only "$BASE_SHA" HEAD | grep -qE '^(docker/|scripts/|\.dockerignore$|\.hadolint\.yaml$|\.github/grype\.yaml$|\.github/scripts/smoke-test\.sh$|\.github/workflows/ci\.yml$)'; then
             echo "image=true" >> "$GITHUB_OUTPUT"
           else
             echo "image=false" >> "$GITHUB_OUTPUT"
@@ -72,7 +72,7 @@ jobs:
 
   lint:
     name: Lint
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 10
     steps:
       - name: Checkout
@@ -95,13 +95,16 @@ jobs:
       - name: ShellCheck (shell scripts)
         run: git ls-files -z '*.sh' | xargs -0 shellcheck
 
+      - name: Syntax check (Python helper)
+        run: python3 -m py_compile .github/scripts/check_drift.py .github/scripts/audit_gate.py
+
       - name: Actionlint (workflows)
         uses: raven-actions/actionlint@3d39aea434753780c3b3d4a1a31c854b4dbf49d7 # v2.2.0
 
   # Mirrors the rules in .editorconfig that tooling can verify reliably.
   format:
     name: Format
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 5
     steps:
       - name: Checkout
@@ -135,6 +138,21 @@ jobs:
 
           exit "$status"
 
+  # README.md must describe what the Dockerfile and shell_setup.sh actually do:
+  # pinned versions, the Node major and the alias tables.
+  docs-sync:
+    name: Docs sync
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Check README against the implementation
+        run: bash .github/scripts/check-sync.sh
+
   # Builds the image natively on both architectures and smoke-tests the toolchain.
   # Publishing is handled separately by docker.yml on merges to main.
   build-test:
@@ -148,7 +166,7 @@ jobs:
       matrix:
         include:
           - arch: amd64
-            runner: ubuntu-latest
+            runner: ubuntu-24.04
           - arch: arm64
             runner: ubuntu-24.04-arm
     steps:
@@ -174,74 +192,83 @@ jobs:
           cache-from: type=gha,scope=ci-${{ matrix.arch }}
           cache-to: type=gha,mode=max,scope=ci-${{ matrix.arch }}
 
-      - name: Smoke test toolchain
-        run: |
-          pin() { grep -oE "$1=[0-9][0-9.]*" docker/Dockerfile.dev | head -1 | cut -d= -f2; }
-          docker run --rm \
-            -e EXPECT_GRADLE="$(pin GRADLE_VERSION)" \
-            -e EXPECT_FIREBASE="$(pin FIREBASE_TOOLS_VERSION)" \
-            flutter-devcontainer:ci bash -c '
-              set -euo pipefail
-              # Non-login shell keeps the image PATH; load CHROME_EXECUTABLE explicitly.
-              . /etc/profile.d/chrome.sh
-              test "$(id -un)" = "developer"
-              flutter --version
-              dart --version
-              java -version
-              node --version | grep -q "^v24\."
-              gradle --version | grep -q "Gradle ${EXPECT_GRADLE}"
-              test "$(firebase --version)" = "${EXPECT_FIREBASE}"
-              # pnpm is resolved lazily through Corepack, so only check the shims exist.
-              corepack --version
-              command -v pnpm
-              flutterfire --version
-              gh --version
-              starship --version
-              test -f "${ANDROID_SDK_ROOT}/platform-tools/adb"
-              # Google only ships x86_64 platform-tools for Linux, so adb cannot run on arm64.
-              if [ "$(uname -m)" = "x86_64" ]; then adb version; fi
-              test -d "${ANDROID_SDK_ROOT}/platforms/android-36"
-              test -x "${CHROME_EXECUTABLE}"
-              flutter doctor
-            '
+      - name: Smoke test
+        run: bash .github/scripts/smoke-test.sh flutter-devcontainer:ci
 
-      - name: Smoke test shell aliases
-        run: |
-          docker run --rm flutter-devcontainer:ci bash -ic 'type fget frunw ftest fanalyze adbrestart gs'
+      # Grype reads the image straight from the local Docker daemon. Only
+      # critical findings that already have a fix fail the check: everything
+      # else is either noise for a dev image or cannot be fixed from here.
+      # .github/grype.yaml lists the few findings that cannot be fixed from
+      # this repository, each with its reason.
+      - name: Scan image for vulnerabilities
+        if: matrix.arch == 'amd64'
+        uses: anchore/scan-action@27805bf3b4e84b4a5c980df22ed233c00390a439 # v7.4.2
+        with:
+          image: flutter-devcontainer:ci
+          config: .github/grype.yaml
+          fail-build: true
+          severity-cutoff: critical
+          only-fixed: true
+          output-format: table
 
-  # Dependency audit for the npm tooling baked into the image. The repository has
-  # no package.json of its own, so a throw-away lockfile is generated for the
-  # exact firebase-tools version pinned in the Dockerfile and audited.
+  # Dependency audit for the npm tooling baked into the image. The repository
+  # has no package.json of its own, so the manifest is composed exactly as the
+  # Dockerfile does it (pinned firebase-tools version + docker/firebase-tools-
+  # overrides.json) and audited, which makes the audit cover what actually ships.
+  # High and critical advisories fail the job unless .github/npm-audit-allowlist.txt
+  # records why they are accepted; lower severities are listed for information.
   npm-audit:
     name: npm audit (firebase-tools)
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 10
     steps:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          sparse-checkout: docker/Dockerfile.dev
+          sparse-checkout: |
+            docker/Dockerfile.dev
+            docker/firebase-tools-overrides.json
+            .github/scripts/audit_gate.py
+            .github/npm-audit-allowlist.txt
           sparse-checkout-cone-mode: false
           persist-credentials: false
 
-      - name: Audit pinned firebase-tools
+      - name: Audit the firebase-tools tree that ships in the image
+        env:
+          AUDIT_DIR: ${{ runner.temp }}/audit
         run: |
           version="$(grep -oE 'FIREBASE_TOOLS_VERSION=[0-9][0-9.]*' docker/Dockerfile.dev | head -1 | cut -d= -f2)"
           test -n "$version"
-          mkdir "$RUNNER_TEMP/audit" && cd "$RUNNER_TEMP/audit"
-          npm init -y > /dev/null
-          npm install "firebase-tools@${version}" --package-lock-only --ignore-scripts --no-fund --no-audit
+          mkdir -p "$AUDIT_DIR"
+          # Keep this jq expression identical to the one in docker/Dockerfile.dev.
+          jq --arg version "$version" \
+            '{name: "firebase-tools-image", private: true, dependencies: {"firebase-tools": $version}} + .' \
+            docker/firebase-tools-overrides.json > "$AUDIT_DIR/package.json"
+          npm install --prefix "$AUDIT_DIR" --package-lock-only --ignore-scripts --no-fund --no-audit
+
+          # `npm audit` exits non-zero when it finds anything; audit_gate.py below
+          # decides pass or fail, so only that exit code is ignored. A failing
+          # `cd` stays fatal instead of being swallowed by the `|| true`.
+          (cd "$AUDIT_DIR" || exit 1; npm audit --json > audit.json || true)
+
+          status=0
+          python3 .github/scripts/audit_gate.py "$AUDIT_DIR/audit.json" .github/npm-audit-allowlist.txt \
+            > "$AUDIT_DIR/summary.md" || status=$?
 
           {
             echo "## npm audit — firebase-tools@${version}"
+            echo
+            cat "$AUDIT_DIR/summary.md"
+            echo "<details><summary>Full npm audit output</summary>"
+            echo
             echo '```'
-            npm audit || true
+            (cd "$AUDIT_DIR" || exit 1; npm audit || true)
             echo '```'
+            echo "</details>"
           } >> "$GITHUB_STEP_SUMMARY"
 
-          # Gate on critical advisories only: transitive high/moderate findings
-          # in upstream's dependency tree cannot be fixed from this repository.
-          npm audit --audit-level=critical
+          cat "$AUDIT_DIR/summary.md"
+          exit "$status"
 
   # The one check to require in branch protection. It always runs and fails if
   # any job above failed or was cancelled; jobs skipped by design count as passed.
@@ -253,9 +280,10 @@ jobs:
       - changes
       - lint
       - format
+      - docs-sync
       - build-test
       - npm-audit
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 2
     steps:
       - name: Evaluate results

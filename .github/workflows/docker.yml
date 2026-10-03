@@ -2,6 +2,10 @@
 #
 # Publishes the multi-platform image to Docker Hub. Pull-request validation
 # (build + smoke tests on both architectures) lives in ci.yml.
+#
+# Flow: each architecture is built natively (no QEMU), smoke-tested, and only
+# then pushed by digest. A final job merges the two digests into one manifest
+# list, tags it and signs it with a keyless Sigstore signature.
 name: Docker
 
 on:
@@ -12,6 +16,11 @@ on:
       - "docker/Dockerfile.dev"
       - "scripts/**"
       - ".github/workflows/docker.yml"
+  # Weekly rebuild: Flutter tracks the stable channel and the base image gets
+  # security patches, so the published image is refreshed even when nothing in
+  # this repository changed.
+  schedule:
+    - cron: "0 5 * * 1"
   workflow_dispatch:
     inputs:
       push_image:
@@ -37,17 +46,27 @@ permissions:
 
 env:
   IMAGE_NAME: alihaidar199527/flutter-devcontainer
+  # A manual run with push_image=false is a dry run; every other trigger publishes.
+  PUSH: ${{ github.event_name != 'workflow_dispatch' || inputs.push_image == 'true' }}
 
 jobs:
-  build-and-push:
-    name: Build & Push Dev Image
-    runs-on: ubuntu-latest
-    timeout-minutes: 45
+  build:
+    name: Build & test (${{ matrix.arch }})
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 60
     # Docker Hub credentials live in this environment; restrict it to the
     # `main` branch in Settings → Environments (see docs/github-setup.md).
     environment: docker-hub
     permissions:
       contents: read
+    strategy:
+      fail-fast: true
+      matrix:
+        include:
+          - arch: amd64
+            runner: ubuntu-24.04
+          - arch: arm64
+            runner: ubuntu-24.04-arm
 
     steps:
       - name: Checkout
@@ -55,13 +74,11 @@ jobs:
         with:
           persist-credentials: false
 
-      - name: Set up QEMU
-        uses: docker/setup-qemu-action@99012661954931238ded8c8b007157a8430204e1 # v4.4.0
-
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
 
       - name: Log in to Docker Hub
+        if: env.PUSH == 'true'
         uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
         with:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
@@ -72,37 +89,182 @@ jobs:
         uses: docker/metadata-action@dc802804100637a589fabce1cb79ff13a1411302 # v6.2.0
         with:
           images: ${{ env.IMAGE_NAME }}
-          tags: |
-            type=raw,value=latest,enable=${{ github.ref == 'refs/heads/main' }}
-            type=sha,prefix=sha-,format=short
 
-      - name: Build and push
-        id: build
+      # The registry cache keeps the (very large) layers out of the 10 GB
+      # GitHub Actions cache, which the pull-request builds already use.
+      # A forced rebuild imports no cache at all; the push step below still
+      # reuses what this step just built, because BuildKit keeps its cache for
+      # the whole job.
+      - name: Build image for testing
         uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
         with:
           context: .
           file: docker/Dockerfile.dev
-          platforms: linux/amd64,linux/arm64
-          push: ${{ github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && inputs.push_image == 'true') }}
-          tags: ${{ steps.meta.outputs.tags }}
-          labels: ${{ steps.meta.outputs.labels }}
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
-          no-cache: ${{ inputs.force_rebuild == true }}
+          platforms: linux/${{ matrix.arch }}
+          load: true
+          push: false
+          tags: flutter-devcontainer:test
           build-args: |
             NODE_VERSION=24
-          provenance: true
+          cache-from: ${{ inputs.force_rebuild != true && format('type=registry,ref={0}:buildcache-{1}', env.IMAGE_NAME, matrix.arch) || '' }}
+
+      - name: Smoke test
+        run: bash .github/scripts/smoke-test.sh flutter-devcontainer:test
+
+      # Informational: the blocking scan runs on pull requests (ci.yml). Here it
+      # documents what the published image contains without holding back a
+      # security refresh of the base image.
+      - name: Scan image for vulnerabilities
+        if: matrix.arch == 'amd64'
+        uses: anchore/scan-action@27805bf3b4e84b4a5c980df22ed233c00390a439 # v7.4.2
+        with:
+          image: flutter-devcontainer:test
+          fail-build: false
+          severity-cutoff: high
+          only-fixed: true
+          output-format: table
+
+      - name: Read Flutter version
+        id: flutter
+        run: |
+          version="$(docker run --rm flutter-devcontainer:test flutter --version --machine 2>/dev/null | jq -r .frameworkVersion)"
+          if ! [[ "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+ ]]; then
+            echo "::error::Could not determine the Flutter version (got '$version')"
+            exit 1
+          fi
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+
+      # Same build as above (BuildKit keeps its cache for the whole job), pushed
+      # by digest with SBOM and maximum-detail provenance attestations.
+      - name: Push by digest
+        id: push
+        if: env.PUSH == 'true'
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
+        with:
+          context: .
+          file: docker/Dockerfile.dev
+          platforms: linux/${{ matrix.arch }}
+          labels: ${{ steps.meta.outputs.labels }}
+          build-args: |
+            NODE_VERSION=24
+          cache-from: ${{ inputs.force_rebuild != true && format('type=registry,ref={0}:buildcache-{1}', env.IMAGE_NAME, matrix.arch) || '' }}
+          cache-to: type=registry,ref=${{ env.IMAGE_NAME }}:buildcache-${{ matrix.arch }},mode=max,image-manifest=true,oci-mediatypes=true
+          outputs: type=image,name=${{ env.IMAGE_NAME }},push-by-digest=true,name-canonical=true,push=true
+          provenance: mode=max
           sbom: true
+
+      - name: Export digest
+        if: env.PUSH == 'true'
+        env:
+          DIGEST: ${{ steps.push.outputs.digest }}
+          FLUTTER_VERSION: ${{ steps.flutter.outputs.version }}
+          ARCH: ${{ matrix.arch }}
+        run: |
+          mkdir -p "$RUNNER_TEMP/digests"
+          touch "$RUNNER_TEMP/digests/${DIGEST#sha256:}"
+          echo "$FLUTTER_VERSION" > "$RUNNER_TEMP/digests/flutter-$ARCH"
+
+      - name: Upload digest
+        if: env.PUSH == 'true'
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: digests-${{ matrix.arch }}
+          path: ${{ runner.temp }}/digests/*
+          if-no-files-found: error
+          retention-days: 1
+
+  merge:
+    name: Publish multi-platform manifest
+    needs: build
+    if: github.event_name != 'workflow_dispatch' || inputs.push_image == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    environment: docker-hub
+    permissions:
+      contents: read
+      # Keyless signing: the job proves its identity to Sigstore with an OIDC token.
+      id-token: write
+
+    steps:
+      - name: Download digests
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          path: ${{ runner.temp }}/digests
+          pattern: digests-*
+          merge-multiple: true
+
+      - name: Resolve Flutter version
+        id: flutter
+        env:
+          DIGESTS: ${{ runner.temp }}/digests
+        run: |
+          versions="$(cat "$DIGESTS"/flutter-* | sort -u)"
+          if [ "$(printf '%s\n' "$versions" | wc -l)" -ne 1 ]; then
+            echo "::error::The architectures built different Flutter versions:"
+            printf '%s\n' "$versions"
+            exit 1
+          fi
+          echo "version=$versions" >> "$GITHUB_OUTPUT"
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+
+      - name: Log in to Docker Hub
+        uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      # latest          moving pointer to the newest build
+      # sha-xxxxxxx     immutable: only a push to main that changes the image creates
+      #                 it, so scheduled and manual rebuilds never overwrite it
+      # YYYY.MM.DD      the day's build (matches the GitHub Release date)
+      # flutter-X.Y.Z   the Flutter release baked into the image
+      - name: Extract image metadata
+        id: meta
+        uses: docker/metadata-action@dc802804100637a589fabce1cb79ff13a1411302 # v6.2.0
+        with:
+          images: ${{ env.IMAGE_NAME }}
+          tags: |
+            type=raw,value=latest,enable=${{ github.ref == 'refs/heads/main' }}
+            type=sha,prefix=sha-,format=short,enable=${{ github.event_name == 'push' }}
+            type=raw,value={{date 'YYYY.MM.DD' tz='UTC'}}
+            type=raw,value=flutter-${{ steps.flutter.outputs.version }}
+
+      - name: Create manifest list and push
+        id: manifest
+        working-directory: ${{ runner.temp }}/digests
+        run: |
+          # Only the files named after a digest (64 hex characters) are image digests.
+          sources="$(find . -maxdepth 1 -type f -regextype posix-extended -regex '\./[0-9a-f]{64}' -printf "${IMAGE_NAME}@sha256:%f ")"
+          test "$(wc -w <<< "$sources")" -eq 2
+          # shellcheck disable=SC2046,SC2086
+          docker buildx imagetools create \
+            $(jq -cr '.tags | map("-t " + .) | join(" ")' <<< "$DOCKER_METADATA_OUTPUT_JSON") \
+            $sources
+          # Resolve the digest through a tag this run just created, whatever the trigger.
+          first_tag="$(jq -r '.tags[0]' <<< "$DOCKER_METADATA_OUTPUT_JSON")"
+          digest="$(docker buildx imagetools inspect "$first_tag" --format '{{json .Manifest}}' | jq -r .digest)"
+          test -n "$digest"
+          echo "digest=$digest" >> "$GITHUB_OUTPUT"
+
+      - name: Install Cosign
+        uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6 # v4.1.2
+
+      - name: Sign the image (keyless)
+        env:
+          DIGEST: ${{ steps.manifest.outputs.digest }}
+        run: cosign sign --yes "${IMAGE_NAME}@${DIGEST}"
 
       - name: Write job summary
         if: always()
         env:
-          DIGEST: ${{ steps.build.outputs.digest }}
+          DIGEST: ${{ steps.manifest.outputs.digest }}
           TAGS: ${{ steps.meta.outputs.tags }}
+          FLUTTER_VERSION: ${{ steps.flutter.outputs.version }}
           EVENT_NAME: ${{ github.event_name }}
           REF_NAME: ${{ github.ref_name }}
           COMMIT_SHA: ${{ github.sha }}
-          PUSHED: ${{ github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && inputs.push_image == 'true') }}
         run: |
           {
             echo "## 🐦 Docker Build Summary"
@@ -111,9 +273,10 @@ jobs:
             echo "|-------|-------|"
             echo "| **Image** | \`${IMAGE_NAME}\` |"
             echo "| **Digest** | \`${DIGEST}\` |"
-            echo "| **Tags** | \`${TAGS}\` |"
-            echo "| **Platforms** | \`linux/amd64, linux/arm64\` |"
+            echo "| **Tags** | \`$(tr '\n' ' ' <<< "$TAGS")\` |"
+            echo "| **Flutter** | \`${FLUTTER_VERSION}\` |"
+            echo "| **Platforms** | \`linux/amd64, linux/arm64\` (built natively) |"
+            echo "| **Signed** | Sigstore keyless (Cosign) |"
             echo "| **Triggered by** | \`${EVENT_NAME}\` on \`${REF_NAME}\` |"
             echo "| **Commit** | \`${COMMIT_SHA}\` |"
-            echo "| **Pushed to Docker Hub** | \`${PUSHED}\` |"
           } >> "$GITHUB_STEP_SUMMARY"

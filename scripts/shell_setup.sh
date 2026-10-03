@@ -4,18 +4,45 @@
 #
 #  Runs as root during the Docker image build.
 #  Installs Starship and writes Bash config for the developer user.
+#
+#  Required environment (set from the ARGs in docker/Dockerfile.dev):
+#    STARSHIP_VERSION, STARSHIP_SHA256_AMD64, STARSHIP_SHA256_ARM64
 # =============================================================
 set -euo pipefail
 
 # ── Starship prompt ──────────────────────────────────────────
-curl -fsSL https://starship.rs/install.sh | BIN_DIR=/usr/local/bin sh -s -- --yes
+# Pinned release tarball verified against a SHA-256 kept in the Dockerfile,
+# instead of piping an unpinned install script into a shell.
+: "${STARSHIP_VERSION:?STARSHIP_VERSION must be set by the Dockerfile}"
+case "$(uname -m)" in
+  x86_64)
+    starship_target="x86_64-unknown-linux-musl"
+    starship_sha256="${STARSHIP_SHA256_AMD64:?STARSHIP_SHA256_AMD64 must be set by the Dockerfile}"
+    ;;
+  aarch64)
+    starship_target="aarch64-unknown-linux-musl"
+    starship_sha256="${STARSHIP_SHA256_ARM64:?STARSHIP_SHA256_ARM64 must be set by the Dockerfile}"
+    ;;
+  *)
+    echo "Unsupported architecture: $(uname -m)" >&2
+    exit 1
+    ;;
+esac
+
+starship_tmp="$(mktemp -d)"
+curl -fsSL \
+  "https://github.com/starship/starship/releases/download/v${STARSHIP_VERSION}/starship-${starship_target}.tar.gz" \
+  -o "${starship_tmp}/starship.tar.gz"
+echo "${starship_sha256}  ${starship_tmp}/starship.tar.gz" | sha256sum -c -
+tar -xzf "${starship_tmp}/starship.tar.gz" -C /usr/local/bin starship
+rm -rf "${starship_tmp}"
 
 # ── Starship config ──────────────────────────────────────────
 mkdir -p /home/developer/.config
 
 cat > /home/developer/.config/starship.toml << 'STARSHIP'
 format = """
-[╭─](bold cyan)$directory$git_branch$git_status$dart$flutter_version$nodejs
+[╭─](bold cyan)$directory$git_branch$git_status$dart$nodejs
 [╰─❯](bold cyan) """
 
 [directory]
@@ -33,11 +60,6 @@ style = "bold red"
 [dart]
 symbol = " "
 style  = "bold cyan"
-format = "[$symbol$version]($style) "
-
-[flutter_version]
-symbol = " "
-style  = "bold blue"
 format = "[$symbol$version]($style) "
 
 [nodejs]
@@ -91,7 +113,6 @@ alias fbuild="flutter build"
 alias fbuildapk="flutter build apk --release"
 alias fbuildaab="flutter build appbundle --release"
 alias fbuildweb="flutter build web --release"
-alias fbuildlinux="flutter build linux --release"
 alias ftest="flutter test"
 alias ftestc="flutter test --coverage"
 alias fanalyze="flutter analyze"
@@ -106,7 +127,6 @@ alias fupgrade_sdk="flutter upgrade"
 # ── Dart aliases ─────────────────────────────────────────────
 alias dpub="dart pub"
 alias dget="dart pub get"
-alias daudit="dart pub audit"
 alias dformat="dart format ."
 alias danalyze="dart analyze"
 alias dtest="dart test"

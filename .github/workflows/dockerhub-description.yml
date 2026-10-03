@@ -16,7 +16,7 @@ permissions:
 jobs:
   update-description:
     name: Update Docker Hub Description
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 10
     # Docker Hub credentials live in this environment; restrict it to the
     # `main` branch in Settings → Environments (see docs/github-setup.md).

@@ -1,21 +1,9 @@
-# ── Version control ──────────────────────────────────────────
-.git
-.gitignore
-.gitattributes
-.github
+# Allowlist: the build context contains only what the Dockerfile needs
+# (it COPYs scripts/shell_setup.sh and docker/firebase-tools-overrides.json).
+# Everything else — .git, workflows, docs, editor files, local tooling — stays
+# out of the context by default.
+*
 
-# ── Documentation ─────────────────────────────────────────────
-*.md
+!scripts/shell_setup.sh
+!docker/firebase-tools-overrides.json
 !README.md
-docs/
-
-# ── OS artefacts ──────────────────────────────────────────────
-.DS_Store
-Thumbs.db
-Desktop.ini
-
-# ── Editor ───────────────────────────────────────────────────
-.vscode/
-.idea/
-*.swp
-*~

@@ -1,15 +1,20 @@
 # .github/workflows/release.yml
 #
-# Every merge into main (i.e. every develop -> main promotion) is published as a
-# GitHub Release with auto-generated notes. Releases use calendar versions
-# (vYYYY.MM.DD, then vYYYY.MM.DD.1, ...) because the image has no semantic API:
-# Flutter and the Android SDK float with upstream.
+# Every promotion into main that changes the image (same path filter as
+# docker.yml) is published as a GitHub Release with auto-generated notes.
+# Releases use calendar versions (vYYYY.MM.DD, then vYYYY.MM.DD.1, ...) because
+# the image has no semantic API: Flutter and the Android SDK float with
+# upstream. The image published that day also carries the date tag YYYY.MM.DD.
 name: Release
 
 on:
   push:
     branches:
       - main
+    paths:
+      - "docker/Dockerfile.dev"
+      - "scripts/**"
+      - ".github/workflows/docker.yml"
 
 concurrency:
   group: release
@@ -20,7 +25,7 @@ permissions: {}
 jobs:
   release:
     name: Publish GitHub Release
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 10
     permissions:
       contents: write

@@ -33,9 +33,13 @@ updates:
     open-pull-requests-limit: 5
 
   # ── Docker ────────────────────────────────────────────────
-  # Every dependency in the Dockerfile is version-checked EXCEPT
-  # Node — it is intentionally pinned to 24 (Active LTS) and
-  # excluded from all Dependabot updates; upgraded manually.
+  # The only image in the Dockerfile is the node base, and Node is
+  # intentionally frozen at 24: it is excluded from all updates and upgraded
+  # manually. Its FROM line is assembled from ARGs (tag and digest), which
+  # Dependabot most likely cannot resolve, so the ignore rule below is a guard
+  # rather than the mechanism. firebase-tools, pnpm, Starship, the
+  # Android cmdline-tools build and the node base digest are tracked weekly by
+  # .github/workflows/dependency-drift.yml, which keeps one issue up to date.
   - package-ecosystem: "docker"
     directory: "/docker"
     schedule:
