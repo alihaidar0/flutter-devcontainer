@@ -1,0 +1,27 @@
+# Grype configuration for the blocking vulnerability scan in
+# .github/workflows/ci.yml (passed explicitly through the `config` input).
+# docker.yml runs its informational scan without it, so the published image's
+# full report is never filtered.
+#
+# A finding belongs here only when it cannot be fixed from this repository.
+# Every rule names the exact package version, so it stops matching, and the scan
+# fails again, as soon as that component is upgraded. Re-check the entries
+# whenever Google publishes a new cmdline-tools package (the weekly
+# dependency-drift workflow reports a newer cmdline-tools build).
+ignore:
+  # bcprov-jdk18on 1.80.2 is bundled by Google inside the Android cmdline-tools
+  # package (cmdline-tools;latest, revision 23.0), which sdkmanager installs.
+  # Google has not shipped a build with a newer Bouncy Castle, and swapping jars
+  # inside the SDK is not supported. Bouncy Castle advisories are fixed only in
+  # newer library releases, so any advisory against this version would block
+  # every pull request with nothing to fix here. Known ones when this rule was
+  # added (all fixed in 1.85):
+  #   GHSA-9pwp-9qqc-pr26  critical  Name Constraints bypass in certificate
+  #                                  validation
+  #   GHSA-qp49-qgx5-5m26  high      ASN.1 nesting-depth guard reset
+  # Risk accepted: the jar is only used by the SDK's own command-line tools on
+  # the developer's machine, which this image is not a service for.
+  - package:
+      name: bcprov-jdk18on
+      version: "1.80.2"
+      type: java-archive

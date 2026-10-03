@@ -47,7 +47,7 @@ The default branch stays `main` so the repository page, the Docker Hub README an
 | Actions permissions | Allow `alihaidar0`, and select non-`alihaidar0`, actions and reusable workflows |
 | Allow actions created by GitHub | On |
 | Allow Marketplace actions by verified creators | Off |
-| Allowed actions (one per line) | `docker/*`, `peter-evans/dockerhub-description@*`, `EndBug/label-sync@*`, `hadolint/hadolint-action@*`, `raven-actions/actionlint@*` |
+| Allowed actions (one per line) | `docker/*`, `peter-evans/dockerhub-description@*`, `EndBug/label-sync@*`, `hadolint/hadolint-action@*`, `raven-actions/actionlint@*`, `anchore/scan-action@*`, `sigstore/cosign-installer@*` |
 | Require actions to be pinned to a full-length commit SHA | **On** |
 | Artifact and log retention | 30 days |
 | Fork pull request workflows | Require approval for all external contributors |
@@ -55,7 +55,9 @@ The default branch stays `main` so the repository page, the Docker Hub README an
 | Workflow permissions | **Read repository contents and packages permissions** |
 | Allow GitHub Actions to create and approve pull requests | Off |
 
-Every workflow also declares its own `permissions:` block (default `contents: read`); jobs that need more (`release.yml`, `labels.yml`) request it explicitly.
+Every workflow also declares its own `permissions:` block (default `contents: read`); jobs that need more request it explicitly: `release.yml` (`contents: write`), `labels.yml` and `dependency-drift.yml` (`issues: write`), and the manifest job of `docker.yml` (`id-token: write` for keyless image signing — no secret is involved).
+
+Workflows run on an explicit runner image (`ubuntu-24.04`, and `ubuntu-24.04-arm` for arm64) rather than `ubuntu-latest`. GitHub moves `ubuntu-latest` to a new Ubuntu release on its own schedule, which changes the toolchain under every job at once and shows up as a warning on each run. Moving to a newer image is a deliberate edit of the `runs-on:` lines (and the matrix runner entries) once the build has been verified on it.
 
 ## 3. Environment and secrets
 
@@ -66,7 +68,9 @@ The Docker Hub credentials are only needed when publishing from `main`, so scope
 3. Environment secrets → add `DOCKERHUB_USERNAME` and `DOCKERHUB_TOKEN` (a Docker Hub access token with **Read, Write & Delete**).
 4. Settings → Secrets and variables → Actions → **delete** the repository-level copies of both secrets. A repository secret stays readable from any branch, which defeats the environment restriction.
 
-With this in place a manual run of **Docker** or **Docker Hub Description** from any branch other than `main` is refused.
+With this in place a manual run of **Docker** or **Docker Hub Description** from any branch other than `main` is refused. The scheduled weekly **Docker** run always executes on the default branch (`main`), so it is allowed.
+
+The publish workflow also writes layer-cache tags (`buildcache-amd64`, `buildcache-arm64`) and signature tags (`sha256-<digest>.sig`) to the Docker Hub repository. Both are expected; the token's **Read, Write & Delete** scope covers them.
 
 ## 4. Settings → Advanced Security (Code security)
 
@@ -98,6 +102,7 @@ Notes:
 - **Required approvals are 0.** A pull request author cannot approve their own PR, so requiring 1 approval would block a solo maintainer from merging at all. Once a second maintainer joins, set `required_approving_review_count` to `1` and `require_code_owner_review` to `true` (`CODEOWNERS` is already in place), then re-import.
 - **`main-protect` does not require "up to date"** (`strict_required_status_checks_policy: false`). After every promotion `main` holds one merge commit that `develop` does not, so a strict rule would force a `main` → `develop` sync before each release.
 - The **CI passed** check is the only required check. It always runs, fails if any job failed or was cancelled, and passes when jobs were skipped by design (for example the image build on a docs-only PR).
+- The required check is pinned to the **GitHub Actions** app (`integration_id: 15368`), so only the `ci.yml` job can satisfy it. Another app or a commit status with the same name is not accepted.
 - Import the rulesets *after* the workflows exist on `main` (see below), otherwise nothing can report the required check.
 
 ## 6. First-time bootstrap order
@@ -139,4 +144,6 @@ git push -u origin fix/example-topic
 # 4. open a PR into develop and merge it with "Create a merge commit"
 ```
 
-Promotion: open a PR `develop` → `main` (title `release: <summary>`) and merge it with a merge commit. That push triggers **Release** (tag `vYYYY.MM.DD`, notes grouped by PR label) and, when `docker/` or `scripts/` changed, **Docker** (publishes `latest` and `sha-xxxxxxx`).
+Promotion: open a PR `develop` → `main` (title `release: <summary>`) and merge it with a merge commit. When `docker/` or `scripts/` changed, that push triggers **Docker** (builds, tests, publishes and signs `latest`, `sha-xxxxxxx`, `YYYY.MM.DD` and `flutter-X.Y.Z`; the immutable `sha-` tag is created only by push-triggered runs) and **Release** (tag `vYYYY.MM.DD`, notes grouped by PR label). A promotion that changes neither produces no new image and no release.
+
+Between promotions, **Docker** also runs every Monday so the published image keeps up with Flutter stable and base-image patches, and **Dependency drift** opens (or updates, or closes) one issue listing pinned tool versions that are behind upstream. Handle that issue like any other change: a topic branch off `develop`, see [Updating the Image](../README.md#updating-the-image).

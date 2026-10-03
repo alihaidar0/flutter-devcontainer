@@ -1,0 +1,71 @@
+# .github/workflows/dependency-drift.yml
+#
+# Dependabot cannot see the tools pinned in docker/Dockerfile.dev
+# (firebase-tools, pnpm, Starship, the Android cmdline-tools build, the node
+# base digest). This workflow compares those pins with their official release
+# channels every week and keeps a single issue up to date; the issue closes
+# itself once everything is current.
+name: Dependency drift
+
+on:
+  schedule:
+    - cron: "0 6 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  drift:
+    name: Check pinned versions
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      issues: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          sparse-checkout: |
+            docker/Dockerfile.dev
+            .github/scripts
+            .github/npm-audit-allowlist.txt
+          sparse-checkout-cone-mode: false
+          persist-credentials: false
+
+      - name: Compare pins with upstream
+        id: check
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPORT: ${{ runner.temp }}/drift-report.md
+        run: python3 .github/scripts/check_drift.py "$REPORT"
+
+      - name: Add report to job summary
+        env:
+          REPORT: ${{ runner.temp }}/drift-report.md
+        run: cat "$REPORT" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Open, update or close the tracking issue
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+          DRIFT: ${{ steps.check.outputs.drift }}
+          REPORT: ${{ runner.temp }}/drift-report.md
+          TITLE: "Dependency drift: pinned tool versions are behind upstream"
+        run: |
+          number="$(gh issue list --state open --label dependencies --limit 100 \
+            --json number,title --jq "map(select(.title == \"$TITLE\")) | .[0].number // empty")"
+
+          if [ "$DRIFT" = "true" ]; then
+            if [ -n "$number" ]; then
+              gh issue edit "$number" --body-file "$REPORT"
+              echo "Updated issue #$number" >> "$GITHUB_STEP_SUMMARY"
+            else
+              gh issue create --title "$TITLE" --label dependencies --body-file "$REPORT"
+              echo "Opened a new drift issue" >> "$GITHUB_STEP_SUMMARY"
+            fi
+          elif [ -n "$number" ]; then
+            gh issue close "$number" --comment "All pinned versions are current again."
+            echo "Closed issue #$number" >> "$GITHUB_STEP_SUMMARY"
+          fi
