@@ -64,7 +64,7 @@ jobs:
             echo "image=true" >> "$GITHUB_OUTPUT"
             exit 0
           fi
-          if git diff --name-only "$BASE_SHA" HEAD | grep -qE '^(docker/|scripts/|\.dockerignore$|\.hadolint\.yaml$|\.github/scripts/smoke-test\.sh$|\.github/workflows/ci\.yml$)'; then
+          if git diff --name-only "$BASE_SHA" HEAD | grep -qE '^(docker/|scripts/|\.dockerignore$|\.hadolint\.yaml$|\.github/grype\.yaml$|\.github/scripts/smoke-test\.sh$|\.github/workflows/ci\.yml$)'; then
             echo "image=true" >> "$GITHUB_OUTPUT"
           else
             echo "image=false" >> "$GITHUB_OUTPUT"
@@ -198,11 +198,14 @@ jobs:
       # Grype reads the image straight from the local Docker daemon. Only
       # critical findings that already have a fix fail the check: everything
       # else is either noise for a dev image or cannot be fixed from here.
+      # .github/grype.yaml lists the few findings that cannot be fixed from
+      # this repository, each with its reason.
       - name: Scan image for vulnerabilities
         if: matrix.arch == 'amd64'
         uses: anchore/scan-action@27805bf3b4e84b4a5c980df22ed233c00390a439 # v7.4.2
         with:
           image: flutter-devcontainer:ci
+          config: .github/grype.yaml
           fail-build: true
           severity-cutoff: critical
           only-fixed: true
@@ -243,7 +246,10 @@ jobs:
             docker/firebase-tools-overrides.json > "$AUDIT_DIR/package.json"
           npm install --prefix "$AUDIT_DIR" --package-lock-only --ignore-scripts --no-fund --no-audit
 
-          (cd "$AUDIT_DIR" && npm audit --json > audit.json || true)
+          # `npm audit` exits non-zero when it finds anything; audit_gate.py below
+          # decides pass or fail, so only that exit code is ignored. A failing
+          # `cd` stays fatal instead of being swallowed by the `|| true`.
+          (cd "$AUDIT_DIR" || exit 1; npm audit --json > audit.json || true)
 
           status=0
           python3 .github/scripts/audit_gate.py "$AUDIT_DIR/audit.json" .github/npm-audit-allowlist.txt \
@@ -256,7 +262,7 @@ jobs:
             echo "<details><summary>Full npm audit output</summary>"
             echo
             echo '```'
-            (cd "$AUDIT_DIR" && npm audit || true)
+            (cd "$AUDIT_DIR" || exit 1; npm audit || true)
             echo '```'
             echo "</details>"
           } >> "$GITHUB_STEP_SUMMARY"

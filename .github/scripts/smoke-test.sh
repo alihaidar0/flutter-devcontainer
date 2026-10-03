@@ -81,12 +81,30 @@ docker run --rm \
     # CHROME_EXECUTABLE is image-level ENV (no shell profile needed) and must run.
     test -x "${CHROME_EXECUTABLE}"
     "${CHROME_EXECUTABLE}" --version
+    # chromedriver must come from the same release as the browser: web
+    # integration tests (`flutter drive -d web-server`) fail on a version mismatch.
+    chrome_major="$("${CHROME_EXECUTABLE}" --version | grep -oE "[0-9]+" | head -1)"
+    chromedriver --version | grep -E "^ChromeDriver ${chrome_major}\." > /dev/null
+    # Tools a Flutter workflow relies on every day: coverage reports and a pager.
+    genhtml --version
+    less --version | head -1
+    # Desktop platforms are switched off, so `flutter doctor` must not mention them.
+    ! flutter doctor -v 2>&1 | grep -E "Linux toolchain|Windows Version|Xcode" > /dev/null
     flutter doctor
   '
 echo "::endgroup::"
 
 echo "::group::Shell aliases"
 docker run --rm "${image}" bash -ic 'type fget frunw ftest fanalyze adbrestart gs'
+echo "::endgroup::"
+
+# Debian's /etc/profile resets PATH for login shells; /etc/profile.d restores it.
+echo "::group::Toolchain on PATH in a login shell"
+docker run --rm "${image}" bash -lc '
+  for tool in flutter dart java node pnpm firebase sdkmanager adb; do
+    command -v "${tool}" > /dev/null || { echo "missing from PATH: ${tool}" >&2; exit 1; }
+  done
+'
 echo "::endgroup::"
 
 echo "::group::Dev Container metadata label"

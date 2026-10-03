@@ -28,6 +28,29 @@ It contains no Flutter project files, no `pubspec.yaml`, no application code, an
 
 ---
 
+## Quick start
+
+The fastest route is the [`flutter-template`](https://github.com/alihaidar0/flutter-template) repository, which already wires this image into a Dev Container. To use the image in your own project, point a Dev Container at it:
+
+```jsonc
+// .devcontainer/devcontainer.json
+{
+  "name": "Flutter",
+  "image": "alihaidar199527/flutter-devcontainer:latest",
+  "forwardPorts": [8080]
+}
+```
+
+The image's metadata supplies the `developer` user, the Dart and Flutter extensions and the Flutter SDK path, so nothing else is required. Port 8080 is where `frunw` serves the web target. Use a [tag](#tags) such as `flutter-X.Y.Z` instead of `latest` to stay on a specific Flutter release.
+
+Without Dev Containers, run any tool straight from the image:
+
+```bash
+docker run --rm -it -v "$PWD:/workspace" alihaidar199527/flutter-devcontainer:latest bash
+```
+
+---
+
 ## Architecture
 
 This image is one half of a two-repo system.
@@ -49,7 +72,9 @@ Runtime defaults baked into the image, so consuming projects need no startup wor
 | --- | --- |
 | `git config --system safe.directory /workspace` | Git works in the bind-mounted workspace (no "dubious ownership" error), even when `~/.gitconfig` is mounted read-only |
 | `~/.gradle`, `~/.pub-cache`, `~/Android`, `~/.shell_history` exist and belong to `developer` | A named volume mounted over them starts writable instead of root-owned |
-| `CHROME_EXECUTABLE=/usr/local/bin/chrome-browser` | Chrome (amd64) or Chromium (arm64) is found by every process, including IDE-launched ones |
+| `CHROME_EXECUTABLE=/usr/local/bin/chrome-browser` | Chromium is found by every process, including IDE-launched ones |
+| `/etc/profile.d/10-dev-toolchain.sh` | Flutter, Java, Node and the Android SDK tools stay on `PATH` in login shells too (`docker exec -l`, `su -l`, SSH), where Debian's `/etc/profile` would otherwise reset it |
+| `ANDROID_HOME` (and the deprecated `ANDROID_SDK_ROOT`, same value) | Android tooling finds the SDK at `/home/developer/Android/sdk` |
 | `COREPACK_ENABLE_DOWNLOAD_PROMPT=0` | Corepack never waits for an interactive confirmation |
 | pnpm prepared for `developer` (Corepack cache) | `pnpm install` works offline when the project's `packageManager` matches the image's pnpm version |
 
@@ -79,13 +104,21 @@ Named volumes are initialised from the image only when they are first created. A
 | **Android Cmdline Tools** | latest (bootstrapped from build 15859902) | `sdkmanager`, `avdmanager` |
 | **Gradle** | per project | No standalone Gradle is installed: each Flutter project's wrapper (`android/gradlew`) downloads the version Flutter chose into the persisted `~/.gradle` cache on the first build |
 
-### Web & Desktop
+### Web & Testing
 
 | Tool | Version | Purpose |
 | --- | --- | --- |
-| **Google Chrome** | stable (amd64) | `flutter run -d web`, `flutter test --platform chrome` |
-| **Chromium** | latest (arm64) | Web target on Apple Silicon |
-| **Linux desktop deps** | — | clang, cmake, ninja, GTK3 — for `flutter build linux` |
+| **Chromium** | Debian 13 build (amd64 and arm64) | `flutter test --platform chrome`, `flutter build web` checks, headless browser for web integration tests |
+| **chromedriver** | matches Chromium | `flutter drive -d web-server` (web integration tests) |
+| **lcov** | Debian 13 build | `genhtml` turns `flutter test --coverage` into an HTML report |
+
+```bash
+ftestc && genhtml coverage/lcov.info -o coverage/html     # HTML coverage report
+
+chromedriver --port=4444 &                                # web integration tests
+flutter drive --driver=test_driver/integration_test.dart \
+  --target=integration_test/app_test.dart -d web-server --browser-name=chrome --headless
+```
 
 ### Developer Tools
 
@@ -96,8 +129,8 @@ Named volumes are initialised from the image only when they are first created. A
 | **pnpm** | 11.28.2 | Fast, disk-efficient package manager, activated via Corepack at build time (cached for the `developer` user — no download on first use) |
 | **GitHub CLI** | latest | `gh pr create`, `gh run watch`, `gh auth login` |
 | **openssh-client** | — | `git push` via SSH from inside the container |
-| **Starship** | 1.26.0 | Terminal prompt — git branch, Flutter version, status |
-| **Utilities** | — | curl, git, jq, nano, htop, tree, procps |
+| **Starship** | 1.26.0 | Terminal prompt — git branch and status, Dart and Node versions |
+| **Utilities** | — | curl, git, jq, less, nano, htop, tree, procps, bash-completion (git and `gh` tab completion) |
 
 ### What is NOT inside
 
@@ -120,10 +153,12 @@ any_other_package             →  flutter pub add <package>
 | --- | --- | --- |
 | Android APK / AAB | `flutter build apk`, `flutter build appbundle` | ✅ Full support |
 | Web | `flutter build web`, `flutter run -d web` | ✅ Full support |
-| Linux Desktop | `flutter build linux` | ✅ Full support |
 | iOS | `flutter build ipa` | ❌ Requires macOS + Xcode — impossible in Linux containers |
+| Linux Desktop | `flutter build linux` | ❌ Not included — a container cannot show a desktop window, so the toolchain is left out |
 | macOS Desktop | `flutter build macos` | ❌ Requires macOS |
 | Windows Desktop | `flutter build windows` | ❌ Requires Windows host |
+
+The three desktop platforms are switched off in the image's Flutter configuration, so `flutter create` generates only the `android`, `ios` and `web` folders and `flutter doctor` reports no desktop toolchains as missing.
 
 ### iOS Note
 
@@ -160,7 +195,10 @@ flutter-devcontainer/
 │   │   ├── dockerhub-description.yml     ← Syncs README.md to Docker Hub on push to main
 │   │   ├── labels.yml                    ← Syncs labels.yml to GitHub labels
 │   │   └── release.yml                   ← Publishes a GitHub Release when a promotion changes the image
+│   ├── CODE_OF_CONDUCT.md                ← Contributor Covenant 2.1
 │   ├── CODEOWNERS                        ← Auto-requests reviewer on every PR
+│   ├── CONTRIBUTING.md                   ← Branching, commit and change guidelines
+│   ├── grype.yaml                        ← Image-scan exceptions for components that cannot be fixed here, each with its reason
 │   ├── npm-audit-allowlist.txt           ← Accepted high/critical advisories, each with its reason
 │   ├── PULL_REQUEST_TEMPLATE.md          ← PR checklist (versions, platforms, scope)
 │   ├── dependabot.yml                    ← Weekly grouped updates for GitHub Actions + Docker base image → develop
@@ -181,7 +219,7 @@ flutter-devcontainer/
 ├── LICENSE                               ← MIT — free to use, your name stays on it
 ├── README.md                             ← This file — also synced to Docker Hub
 ├── SECURITY.md                           ← Vulnerability reporting policy
-└── repomix.config.json                   ← Config for generating the AI-readable repo snapshot
+└── repomix.config.json                   ← Repomix config for generating a single-file repository snapshot
 ```
 
 ---
@@ -215,7 +253,7 @@ Runs on every pull request into `develop` or `main`:
 - **Lint** — Hadolint (`.hadolint.yaml`), ShellCheck, a syntax check of the Python helper, and actionlint.
 - **Format** — LF line endings, no trailing whitespace, final newline (the rules in `.editorconfig` that tooling can check reliably).
 - **Docs sync** — `.github/scripts/check-sync.sh` fails when `README.md` and the implementation disagree: a version pinned in `Dockerfile.dev` that the README does not mention, a Node major that differs between the Dockerfile and the workflows, or an alias missing from (or extra in) the README tables.
-- **Build & test** — builds the image natively on `linux/amd64` and `linux/arm64` (no push) and runs `.github/scripts/smoke-test.sh`: Firebase CLI, pnpm and Starship versions against the pins in `Dockerfile.dev` (pnpm is resolved with the network disabled, proving the build-time cache works), the container user (UID/GID 1000, passwordless `sudo`), writable cache directories, Git's trust of `/workspace`, Node 24, Android platform, Chrome/Chromium, `flutter doctor`, the shell aliases and the Dev Container metadata label. On `amd64` the image is then scanned with Grype; a **critical** vulnerability that already has a fix fails the check. Skipped when a PR touches neither `docker/`, `scripts/`, the smoke test nor the CI configuration.
+- **Build & test** — builds the image natively on `linux/amd64` and `linux/arm64` (no push) and runs `.github/scripts/smoke-test.sh`: Firebase CLI, pnpm and Starship versions against the pins in `Dockerfile.dev` (pnpm is resolved with the network disabled, proving the build-time cache works), the container user (UID/GID 1000, passwordless `sudo`), writable cache directories, Git's trust of `/workspace`, Node 24, Android platform, Chrome/Chromium, `flutter doctor`, the shell aliases and the Dev Container metadata label. On `amd64` the image is then scanned with Grype; a **critical** vulnerability that already has a fix fails the check, unless `.github/grype.yaml` records why it is accepted (only for components that cannot be fixed from this repository, such as the Bouncy Castle library bundled inside Google's Android command-line tools; each entry names the exact version it covers, so it lapses when that component changes). Skipped when a PR touches neither `docker/`, `scripts/`, the smoke test nor the CI configuration.
 - **npm audit** — audits the `firebase-tools` tree exactly as the image installs it (pinned version plus `docker/firebase-tools-overrides.json`). Any **high or critical** advisory fails the check unless `.github/npm-audit-allowlist.txt` records why it is accepted; moderate and low findings are listed for information. The result and the full report are written to the job summary.
 - **CI passed** — the single aggregate check required by branch protection. It fails if any job failed or was cancelled; jobs skipped by design count as passed.
 
@@ -341,7 +379,6 @@ All aliases are defined in `scripts/shell_setup.sh` and baked into the image.
 | `fbuildapk` | `flutter build apk --release` | Release APK |
 | `fbuildaab` | `flutter build appbundle --release` | Release App Bundle |
 | `fbuildweb` | `flutter build web --release` | Release web build |
-| `fbuildlinux` | `flutter build linux --release` | Release Linux desktop |
 | `ftest` | `flutter test` | Run tests |
 | `ftestc` | `flutter test --coverage` | Run tests with coverage |
 | `fanalyze` | `flutter analyze` | Static analysis |
@@ -460,21 +497,20 @@ ENV PNPM_VERSION=11.28.2
 
 ### Upgrading Android SDK
 
-Update the `sdkmanager` call in `docker/Dockerfile.dev`:
+Update the package list of the `sdkmanager` call in the Android SDK layer of `docker/Dockerfile.dev`:
 
 ```dockerfile
-&& sdkmanager \
-   "platform-tools" \
-   "platforms;android-37" \
-   "build-tools;37.0.0" \
-   "cmdline-tools;latest"
+"platform-tools" \
+"platforms;android-37" \
+"build-tools;37.0.0" \
+"cmdline-tools;latest" \
 ```
 
 Check new API levels at [developer.android.com/tools/releases/platforms](https://developer.android.com/tools/releases/platforms).
 
 ### Upgrading Android Cmdline Tools
 
-The cmdline-tools zip is a bootstrap: its URL contains a build number (`15859902`), and `sdkmanager` then installs `cmdline-tools;latest` over it. When Google publishes a new build, update both build args in `docker/Dockerfile.dev`:
+The cmdline-tools zip is a bootstrap: its URL contains a build number (`15859902`). It is unpacked outside the SDK, its `sdkmanager` installs `cmdline-tools;latest` into the SDK, and the bootstrap is then deleted, so no superseded jars stay in the image. When Google publishes a new build, update both build args in `docker/Dockerfile.dev`:
 
 ```dockerfile
 ARG CMDLINE_TOOLS_BUILD=<new build number>
@@ -566,15 +602,15 @@ adb connect host.docker.internal:5555
 
 On Windows, ensure your firewall allows inbound TCP on ports `5037` and `5555` from the Docker network.
 
-### Chrome not found for web builds
+### `flutter run -d chrome` shows no window
 
-Chrome is only installed on `linux/amd64`. On `linux/arm64` (Apple Silicon), `flutter run -d web` uses the web server target instead:
+The container has no display, so a browser window cannot open inside it. Use the web server target and open the page in your host browser:
 
 ```bash
 frunw   # flutter run -d web-server --web-port 8080 --web-hostname 0.0.0.0
 ```
 
-Then open `http://localhost:8080` on your host browser.
+Then open `http://localhost:8080`. Chromium is still used headlessly inside the container for `flutter test --platform chrome` and web integration tests.
 
 ### `git push` fails — permission denied (publickey)
 
@@ -602,7 +638,8 @@ Flutter SDK + Android SDK together are ~4–5 GB. Ensure Docker Desktop has at l
 
 - Work on a topic branch (`feat/…`, `fix/…`, `docs/…`, `ci/…`, `chore/…`) and open a PR against `develop`, not `main` — `main` is the publish branch and merges into it trigger a live Docker Hub push. Only a `develop` → `main` PR may target `main`.
 - Merge with a **merge commit** (squash and rebase are disabled). The **CI passed** check must be green.
-- Follow the checklist in [`.github/PULL_REQUEST_TEMPLATE.md`](.github/PULL_REQUEST_TEMPLATE.md). Repository settings and rulesets are documented in [`docs/github-setup.md`](docs/github-setup.md).
+- Follow the checklist in [`.github/PULL_REQUEST_TEMPLATE.md`](.github/PULL_REQUEST_TEMPLATE.md) and the guidelines in [`.github/CONTRIBUTING.md`](.github/CONTRIBUTING.md). Repository settings and rulesets are documented in [`docs/github-setup.md`](docs/github-setup.md).
+- Participation is governed by the [Code of Conduct](.github/CODE_OF_CONDUCT.md).
 - Found a vulnerability? See [`SECURITY.md`](SECURITY.md) — do not open a public issue.
 
 ---

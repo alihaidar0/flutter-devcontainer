@@ -42,7 +42,7 @@ mkdir -p /home/developer/.config
 
 cat > /home/developer/.config/starship.toml << 'STARSHIP'
 format = """
-[╭─](bold cyan)$directory$git_branch$git_status$dart$flutter_version$nodejs
+[╭─](bold cyan)$directory$git_branch$git_status$dart$nodejs
 [╰─❯](bold cyan) """
 
 [directory]
@@ -60,11 +60,6 @@ style = "bold red"
 [dart]
 symbol = " "
 style  = "bold cyan"
-format = "[$symbol$version]($style) "
-
-[flutter_version]
-symbol = " "
-style  = "bold blue"
 format = "[$symbol$version]($style) "
 
 [nodejs]
@@ -118,7 +113,6 @@ alias fbuild="flutter build"
 alias fbuildapk="flutter build apk --release"
 alias fbuildaab="flutter build appbundle --release"
 alias fbuildweb="flutter build web --release"
-alias fbuildlinux="flutter build linux --release"
 alias ftest="flutter test"
 alias ftestc="flutter test --coverage"
 alias fanalyze="flutter analyze"
