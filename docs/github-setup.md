@@ -102,6 +102,7 @@ Notes:
 - **Required approvals are 0.** A pull request author cannot approve their own PR, so requiring 1 approval would block a solo maintainer from merging at all. Once a second maintainer joins, set `required_approving_review_count` to `1` and `require_code_owner_review` to `true` (`CODEOWNERS` is already in place), then re-import.
 - **`main-protect` does not require "up to date"** (`strict_required_status_checks_policy: false`). After every promotion `main` holds one merge commit that `develop` does not, so a strict rule would force a `main` → `develop` sync before each release.
 - The **CI passed** check is the only required check. It always runs, fails if any job failed or was cancelled, and passes when jobs were skipped by design (for example the image build on a docs-only PR).
+- The required check is pinned to the **GitHub Actions** app (`integration_id: 15368`), so only the `ci.yml` job can satisfy it. Another app or a commit status with the same name is not accepted.
 - Import the rulesets *after* the workflows exist on `main` (see below), otherwise nothing can report the required check.
 
 ## 6. First-time bootstrap order
