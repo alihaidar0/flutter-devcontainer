@@ -1,21 +1,21 @@
 # =============================================================
 #  Flutter Dev Container
 #
-#  Base: node:24-bookworm-slim (Node.js 24 Active LTS on Debian 12)
+#  Base: node:24-trixie-slim (Node.js 24 LTS on Debian 13), pinned by
+#  digest so every build starts from a known, reviewable base image.
 #  Node is a first-class runtime dependency: Firebase CLI and
-#  FlutterFire CLI both require it. The official node image ensures
-#  Dependabot tracks the base image version automatically.
+#  FlutterFire CLI both require it.
 #
 #  Pre-installed (environment only — no application code):
 #    Flutter SDK      — stable channel, always latest
 #    Dart SDK         — bundled with Flutter
 #    Android SDK      — platform-tools, android-36, build-tools 36.0.0
-#    Gradle 9.7.1     — pre-cached at /opt/gradle
-#    Java 21          — Eclipse Temurin (Adoptium); OpenJDK 21 is not
-#                       available in Debian 12 APT repositories
+#                       (Gradle comes from each project's own wrapper)
+#    Java 21          — Eclipse Temurin (Adoptium), the same JDK on every
+#                       Debian release and architecture
 #    Node.js 24 LTS   — required by Firebase CLI
 #    pnpm             — activated via Corepack at build time
-#    Firebase CLI     — pinned, manually tracked
+#    Firebase CLI     — pinned, tracked by the dependency-drift workflow
 #    FlutterFire CLI  — installed via dart pub global
 #    Google Chrome    — amd64; Chromium on arm64
 #    Linux desktop    — clang, cmake, ninja, GTK3
@@ -25,36 +25,54 @@
 # =============================================================
 
 ARG NODE_VERSION=24
+# Multi-arch index digest of node:24-trixie-slim. The digest, not the tag,
+# decides what is pulled; the weekly dependency-drift workflow reports when the
+# tag has moved on so the digest can be refreshed deliberately.
+ARG NODE_IMAGE_DIGEST=sha256:8ec5d7557396cfe32d21c3f9c13072355ceab22b584578ca4bb28af31120cffe
 
-FROM node:${NODE_VERSION}-bookworm-slim
+FROM node:${NODE_VERSION}-trixie-slim@${NODE_IMAGE_DIGEST}
 
 # Re-declare after FROM so the ARG is available in this build stage.
 ARG NODE_VERSION
+# Build-time only (an ENV would leak into every `sudo apt` run in the container).
+ARG DEBIAN_FRONTEND=noninteractive
 
 LABEL org.opencontainers.image.title="Flutter Dev Container"
 LABEL org.opencontainers.image.description="Full-stack Flutter development environment — Android · Web · Linux Desktop · Node 24 LTS · Firebase · FlutterFire"
 LABEL org.opencontainers.image.authors="Ali Haidar"
 LABEL org.opencontainers.image.source="https://github.com/alihaidar0/flutter-devcontainer"
+LABEL org.opencontainers.image.documentation="https://github.com/alihaidar0/flutter-devcontainer#readme"
+LABEL org.opencontainers.image.licenses="MIT"
+# Dev Container image metadata: a devcontainer.json (or Compose service) that
+# uses this image inherits the user, the Dart/Flutter extensions and the Flutter
+# SDK path without repeating them (https://containers.dev/implementors/spec/#merge-logic).
+LABEL devcontainer.metadata='[{"remoteUser":"developer","customizations":{"vscode":{"extensions":["Dart-Code.dart-code","Dart-Code.flutter"],"settings":{"dart.flutterSdkPath":"/home/developer/flutter"}}}}]'
 
 # ── Pinned versions ───────────────────────────────────────────
-# Last verified: 2026-08-20.
-#   Gradle, firebase-tools, and pnpm confirmed against their official
-#   release channels on this date. cmdline-tools build number and the
-#   Android platform/build-tools levels were NOT re-verified this pass —
-#   check https://developer.android.com/studio#command-tools and
-#   https://developer.android.com/tools/releases/platforms before bumping,
-#   since a wrong cmdline-tools build number breaks the image build outright.
-ENV GRADLE_VERSION=9.7.1 \
-    FIREBASE_TOOLS_VERSION=15.27.0 \
-    PNPM_VERSION=11.22.0 \
+# Last verified: 2026-10-03.
+#   firebase-tools, pnpm (latest 11.x — pnpm 12 is a major bump that needs its
+#   own review), Starship, the cmdline-tools build and the node base digest
+#   were confirmed against their official release channels on this date.
+#   Android platform/build-tools levels match Flutter's default compileSdk (36).
+#   The cmdline-tools build number is taken from
+#   https://developer.android.com/studio#command-tools — a wrong build number
+#   breaks the image build outright, so always copy its SHA-256 from that page.
+#
+# COREPACK_ENABLE_DOWNLOAD_PROMPT=0: Corepack must never wait for a "download
+# this package manager?" answer in a non-interactive container step.
+# CHROME_EXECUTABLE points at a stable symlink created in the browser layer, so
+# it is identical on amd64 (Chrome) and arm64 (Chromium) and is set for every
+# process, including IDE-launched ones that never read a shell profile.
+ENV FIREBASE_TOOLS_VERSION=15.32.1 \
+    PNPM_VERSION=11.28.2 \
     ANDROID_SDK_ROOT=/home/developer/Android/sdk \
     FLUTTER_ROOT=/home/developer/flutter \
-    GRADLE_HOME=/opt/gradle \
     GRADLE_USER_HOME=/home/developer/.gradle \
     PUB_CACHE=/home/developer/.pub-cache \
+    CHROME_EXECUTABLE=/usr/local/bin/chrome-browser \
+    COREPACK_ENABLE_DOWNLOAD_PROMPT=0 \
     LANG=C.UTF-8 \
     LC_ALL=C.UTF-8 \
-    DEBIAN_FRONTEND=noninteractive \
     TZ=Etc/UTC
 
 # ── PATH ─────────────────────────────────────────────────────
@@ -62,21 +80,17 @@ ENV PATH="${FLUTTER_ROOT}/bin:\
 ${PUB_CACHE}/bin:\
 ${ANDROID_SDK_ROOT}/platform-tools:\
 ${ANDROID_SDK_ROOT}/cmdline-tools/latest/bin:\
-${GRADLE_HOME}/gradle-${GRADLE_VERSION}/bin:\
 ${PATH}"
 
 # ── System packages ──────────────────────────────────────────
 #
 # Intentionally excluded:
-#   openjdk-21-jdk    — not available in Debian 12 (Bookworm); installed
-#                       separately via Eclipse Temurin / Adoptium APT.
-#   libstdc++-12-dev  — clang on Bookworm uses its own bundled libc++;
-#                       Flutter Linux builds work without it.
+#   openjdk-21-jdk    — Debian 13 does package it, but Eclipse Temurin (below)
+#                       gives the identical JDK on every distro and architecture.
 #   git-lfs           — project-level concern; add via postCreateCommand.
 #   wget / vim        — curl covers all downloads; nano handles emergency edits.
 #   iputils-ping      — network debugging belongs on the host.
-#   libglu1-mesa      — not available on bookworm-slim; not required by
-#                       Flutter's Linux desktop renderer.
+#   libglu1-mesa      — not required by Flutter's Linux desktop renderer.
 #
 RUN apt-get update \
     && apt-get install -y --no-install-recommends \
@@ -92,20 +106,30 @@ RUN apt-get update \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/*
 
+# ── Git: trust the workspace mount ───────────────────────────
+# /workspace is a bind mount whose owner usually differs from the container
+# user (always on Docker Desktop for Windows/macOS), and Git then refuses to
+# work in it with "dubious ownership". System scope is baked in here so no
+# consuming project needs a startup step for it, and so it still works when
+# ~/.gitconfig is mounted read-only from the host.
+RUN git config --system --add safe.directory /workspace
+
 # ── Java 21 (Eclipse Temurin via Adoptium) ───────────────────
 #
-# openjdk-21-jdk is NOT available in Debian 12 (Bookworm) APT repositories.
-# Debian 12 ships OpenJDK 17 as its highest default version; OpenJDK 21 is
-# only packaged for Debian 13 (Trixie) and above.
+# Debian 13 packages OpenJDK 21 too, but Temurin is kept on purpose: it is the
+# same TCK-certified build on every Debian release and on both architectures,
+# so the JDK does not change when the base image does.
 #
 # Note: Temurin 25 is now the latest LTS line (as of late 2025), and is
 # whichjdk.com's current recommendation for new projects. Staying on 21
 # here is a deliberate choice pending a compatibility check against
-# Gradle 9.7.x / AGP / Flutter before bumping — not an oversight.
+# AGP / Flutter before bumping — not an oversight.
+# (Flutter 3.47's Android template uses AGP 9.1, which needs JDK 17 or newer,
+# so 21 is comfortably inside the supported range.)
 #
 # Eclipse Temurin is the Adoptium distribution of OpenJDK. It is:
 #   - TCK-certified and AQAvit quality-verified (production-ready)
-#   - Available for both linux/amd64 and linux/arm64 on Bookworm
+#   - Available for both linux/amd64 and linux/arm64 on Debian 13
 #   - Maintained with quarterly security patches
 #
 # A canonical arch-agnostic symlink is created at /usr/local/temurin-21
@@ -144,9 +168,7 @@ RUN ARCH="$(dpkg --print-architecture)" \
          && rm -rf /var/lib/apt/lists/* \
          && CHROME_BIN=/usr/bin/chromium; \
        fi \
-    && echo "export CHROME_EXECUTABLE=${CHROME_BIN}" \
-         > /etc/profile.d/chrome.sh \
-    && chmod 644 /etc/profile.d/chrome.sh
+    && ln -s "${CHROME_BIN}" /usr/local/bin/chrome-browser
 
 # ── GitHub CLI ───────────────────────────────────────────────
 RUN curl -fsSL https://cli.github.com/packages/githubcli-archive-keyring.gpg \
@@ -162,38 +184,75 @@ RUN curl -fsSL https://cli.github.com/packages/githubcli-archive-keyring.gpg \
 
 # ── Global npm tools ─────────────────────────────────────────
 # firebase-tools is pinned via FIREBASE_TOOLS_VERSION and updated manually.
-# Requires root — npm install -g writes to /usr/local/lib/node_modules.
 # Latest release: https://www.npmjs.com/package/firebase-tools
-RUN npm install -g \
-    firebase-tools@${FIREBASE_TOOLS_VERSION}
+#
+# It is installed into its own prefix instead of with `npm install -g` because
+# `npm install -g` ignores `overrides`, and upstream's dependency tree contains
+# advisories that have a patched release which firebase-tools has not picked up
+# yet. docker/firebase-tools-overrides.json holds the overrides; CI audits the
+# very same file (see the "npm audit" job), so what is audited is what ships.
+# Requires root: the prefix is /opt/firebase-tools and the symlink goes to
+# /usr/local/bin.
+COPY docker/firebase-tools-overrides.json /tmp/firebase-tools-overrides.json
+RUN mkdir -p /opt/firebase-tools \
+    && jq --arg version "${FIREBASE_TOOLS_VERSION}" \
+         '{name: "firebase-tools-image", private: true, dependencies: {"firebase-tools": $version}} + .' \
+         /tmp/firebase-tools-overrides.json > /opt/firebase-tools/package.json \
+    && npm install --prefix /opt/firebase-tools --omit=dev --no-audit --no-fund \
+    && ln -s /opt/firebase-tools/node_modules/.bin/firebase /usr/local/bin/firebase \
+    && rm /tmp/firebase-tools-overrides.json \
+    && npm cache clean --force
 
-# ── pnpm via Corepack ─────────────────────────────────────────
+# ── Corepack shims ───────────────────────────────────────────
 # Corepack ships bundled with Node but is dormant until explicitly enabled.
-# Enabling it creates a symlink in /usr/local/bin, which requires root —
+# Enabling it creates symlinks in /usr/local/bin, which requires root —
 # hence this runs here, before the switch to the non-root `developer` user.
-# Activating pnpm at build time means every generated project's
-# `postCreateCommand: pnpm install` works immediately, with no per-project
-# sudo workaround and no runtime download on first container start.
-RUN corepack enable \
-    && corepack prepare pnpm@${PNPM_VERSION} --activate
+# The pnpm download itself is done as `developer` further down.
+RUN corepack enable
 
-# ── Non-root developer user ──────────────────────────────────
-RUN useradd -ms /bin/bash developer \
-    && usermod -aG sudo developer \
-    && echo "developer ALL=(ALL) NOPASSWD:ALL" >> /etc/sudoers
+# ── Non-root developer user (UID/GID 1000) ───────────────────
+# The node base image already owns UID/GID 1000 through its `node` user. Adding
+# a second user would give `developer` UID 1001, which does not match the first
+# user on a Linux host (UID 1000), so files in the bind-mounted /workspace would
+# not be writable, and Dev Containers' automatic UID remapping skips the update
+# when the target UID is already taken. Renaming `node` keeps UID/GID 1000 and
+# leaves no unused account behind. `set -eux` makes the build fail loudly if a
+# future base image no longer ships that user.
+# Passwordless sudo goes in a drop-in file (mode 0440), not into /etc/sudoers.
+RUN set -eux; \
+    groupmod --new-name developer node; \
+    usermod --login developer --home /home/developer --move-home node; \
+    usermod -aG sudo developer; \
+    echo "developer ALL=(ALL) NOPASSWD:ALL" > /etc/sudoers.d/developer; \
+    chmod 0440 /etc/sudoers.d/developer; \
+    test "$(id -u developer)" = 1000; \
+    test "$(id -g developer)" = 1000
 
 USER developer
 WORKDIR /home/developer
 
+# ── pnpm via Corepack ─────────────────────────────────────────
+# `corepack prepare` stores the pnpm tarball in the cache of the user that runs
+# it. Running it as root (as an earlier revision did) left the cache in
+# /root/.cache, unreadable for `developer`, so the first `pnpm` call in a
+# container downloaded pnpm again. Preparing it as `developer` puts the cache
+# where the shim looks, so every project's `postCreateCommand: pnpm install`
+# works offline, with no per-project workaround. CI verifies this with
+# COREPACK_ENABLE_NETWORK=0.
+RUN corepack prepare pnpm@${PNPM_VERSION} --activate
+
 # ── Android SDK ──────────────────────────────────────────────
-# cmdline-tools build 14742923 is the latest verified as of April 2026.
-# NOT re-verified in this pass (2026-08-20) — check
-# https://developer.android.com/studio#command-tools for a newer build
-# number before bumping. A wrong number here 404s and fails the build.
+# cmdline-tools build 15859902 is the build linked from
+# https://developer.android.com/studio#command-tools (verified 2026-10-03).
+# Copy the new build number AND its SHA-256 from that page together: a wrong
+# build number 404s the build, a wrong checksum fails it on purpose.
+ARG CMDLINE_TOOLS_BUILD=15859902
+ARG CMDLINE_TOOLS_SHA256=4e4c464f145a7512b57d088ac6c278c03c9eea610886b35a5e0804e74eedf583
 RUN mkdir -p "${ANDROID_SDK_ROOT}/cmdline-tools" /home/developer/.android \
     && curl -fsSL \
-       https://dl.google.com/android/repository/commandlinetools-linux-14742923_latest.zip \
+       "https://dl.google.com/android/repository/commandlinetools-linux-${CMDLINE_TOOLS_BUILD}_latest.zip" \
        -o /tmp/cmdline-tools.zip \
+    && echo "${CMDLINE_TOOLS_SHA256}  /tmp/cmdline-tools.zip" | sha256sum -c - \
     && unzip -q /tmp/cmdline-tools.zip -d "${ANDROID_SDK_ROOT}/cmdline-tools" \
     && mv "${ANDROID_SDK_ROOT}/cmdline-tools/cmdline-tools" \
           "${ANDROID_SDK_ROOT}/cmdline-tools/latest" \
@@ -207,14 +266,12 @@ RUN mkdir -p "${ANDROID_SDK_ROOT}/cmdline-tools" /home/developer/.android \
        "cmdline-tools;latest"
 
 # ── Gradle ───────────────────────────────────────────────────
-# Pre-cached at /opt/gradle so the first `flutter build apk` skips the download.
-RUN sudo mkdir -p "${GRADLE_HOME}" \
-    && curl -fsSL \
-       https://services.gradle.org/distributions/gradle-${GRADLE_VERSION}-bin.zip \
-       -o /tmp/gradle.zip \
-    && sudo unzip -q /tmp/gradle.zip -d "${GRADLE_HOME}" \
-    && rm /tmp/gradle.zip \
-    && sudo chown -R developer:developer "${GRADLE_HOME}"
+# No standalone Gradle is installed: Flutter builds run the project's own
+# Gradle wrapper (android/gradlew), whose version is chosen by Flutter's
+# template and downloaded into GRADLE_USER_HOME on first use. GRADLE_USER_HOME
+# is created here, owned by `developer`, so a named volume mounted over it is
+# initialised with the right owner instead of root.
+RUN mkdir -p "${GRADLE_USER_HOME}"
 
 # ── Flutter SDK ──────────────────────────────────────────────
 # Clones the stable channel (always the latest stable release).
@@ -233,9 +290,15 @@ RUN git clone --depth 1 -b stable \
 RUN dart pub global activate flutterfire_cli
 
 # ── Shell customisation ───────────────────────────────────────
-# Starship's install.sh writes to /usr/local/bin, so we switch to root.
+# Starship is installed to /usr/local/bin, so we switch to root. The release
+# tarball is verified against the per-architecture SHA-256 below (published as
+# `starship-<target>.tar.gz.sha256` on the GitHub release). These ARGs reach
+# shell_setup.sh as environment variables.
 # After install, fix ownership of all developer home config files.
 USER root
+ARG STARSHIP_VERSION=1.26.0
+ARG STARSHIP_SHA256_AMD64=b7c232b0e8249d8e55a40beb79c5c43a7d370f3f9408bd215deb0170daeaadf3
+ARG STARSHIP_SHA256_ARM64=dc30189378d2f2e287384e8a692d3f95ad1df64cf0e8c36aa9201516028aed6b
 COPY scripts/shell_setup.sh /tmp/shell_setup.sh
 RUN bash /tmp/shell_setup.sh \
     && chown -R developer:developer /home/developer \

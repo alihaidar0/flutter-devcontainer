@@ -1,0 +1,6 @@
+# Normalise line endings in the repository and keep LF in working trees, even on
+# Windows with core.autocrlf=true: a CRLF shell script or Dockerfile breaks the
+# image build.
+* text=auto eol=lf
+*.sh text eol=lf
+Dockerfile* text eol=lf
