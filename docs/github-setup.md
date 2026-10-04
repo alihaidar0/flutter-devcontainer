@@ -14,7 +14,7 @@ feat/*  fix/*  docs/*  ci/*  chore/*  deps/*
        main    ← publish branch, protected
         │  push
         ▼
-  docker.yml (publish image) + release.yml (GitHub Release)
+  docker.yml (publish image, then call release.yml for the GitHub Release)
 ```
 
 - Nobody pushes to `develop` or `main` directly.
@@ -55,7 +55,7 @@ The default branch stays `main` so the repository page, the Docker Hub README an
 | Workflow permissions | **Read repository contents and packages permissions** |
 | Allow GitHub Actions to create and approve pull requests | Off |
 
-Every workflow also declares its own `permissions:` block (default `contents: read`); jobs that need more request it explicitly: `release.yml` (`contents: write`), `labels.yml` and `dependency-drift.yml` (`issues: write`), and the manifest job of `docker.yml` (`id-token: write` for keyless image signing — no secret is involved).
+Every workflow also declares its own `permissions:` block (default `contents: read`); jobs that need more request it explicitly: the release job of `docker.yml` and the reusable `release.yml` it calls (`contents: write`), `labels.yml` and `dependency-drift.yml` (`issues: write`), and the manifest job of `docker.yml` (`id-token: write` for keyless image signing — no secret is involved).
 
 Workflows run on an explicit runner image (`ubuntu-24.04`, and `ubuntu-24.04-arm` for arm64) rather than `ubuntu-latest`. GitHub moves `ubuntu-latest` to a new Ubuntu release on its own schedule, which changes the toolchain under every job at once and shows up as a warning on each run. Moving to a newer image is a deliberate edit of the `runs-on:` lines (and the matrix runner entries) once the build has been verified on it.
 
@@ -95,7 +95,7 @@ Settings → Rules → Rulesets → **New ruleset** → **Import a ruleset**, on
 | --- | --- | --- |
 | `.github/rulesets/main-protect.json` | `main` | No deletion, no force-push, pull request required (merge commits only, conversations resolved, stale approvals dismissed), required check **CI passed** |
 | `.github/rulesets/develop-protect.json` | `develop` | Same as `main`, and the branch must be up to date with `develop` before merging |
-| `.github/rulesets/tags-protect.json` | `v*` tags | Released tags cannot be moved or deleted |
+| `.github/rulesets/tags-protect.json` | `flutter-*` tags | Released tags cannot be moved or deleted |
 
 Notes:
 
@@ -145,6 +145,6 @@ git push -u origin fix/example-topic
 # 4. open a PR into develop and merge it with "Create a merge commit"
 ```
 
-Promotion: open a PR `develop` → `main` (title `release: <summary>`) and merge it with a merge commit. When `docker/` or `scripts/` changed, that push triggers **Docker** (builds, tests, publishes and signs `latest`, `flutter-X.Y.Z.R` and `sha-xxxxxxx`; the immutable `sha-` tag is created only by push-triggered runs) and **Release** (tag `vYYYY.MM.DD`, notes grouped by PR label). A promotion that changes neither produces no new image and no release.
+Promotion: open a PR `develop` → `main` (title `release: <summary>`) and merge it with a merge commit. When `docker/` or `scripts/` changed, that push triggers **Docker** (builds, tests, publishes and signs `latest`, `flutter-X.Y.Z.R` and `sha-xxxxxxx`; the immutable `sha-` tag is created only by push-triggered runs) and **Release** (called by Docker; the release and its git tag are named after the image, `flutter-X.Y.Z.R`, with notes grouped by PR label). A promotion that changes neither produces no new image and no release.
 
 Between promotions, **Docker** also runs every Monday so the published image keeps up with Flutter stable and base-image patches, and **Dependency drift** opens (or updates, or closes) one issue listing pinned tool versions that are behind upstream. Handle that issue like any other change: a topic branch off `develop`, see [Updating the Image](../README.md#updating-the-image).

@@ -182,7 +182,7 @@ flutter-devcontainer/
 │   ├── rulesets/
 │   │   ├── main-protect.json             ← Importable ruleset: protects main
 │   │   ├── develop-protect.json          ← Importable ruleset: protects develop
-│   │   └── tags-protect.json             ← Importable ruleset: protects release tags
+│   │   └── tags-protect.json             ← Importable ruleset: protects release (`flutter-*`) tags
 │   ├── scripts/
 │   │   ├── audit_gate.py                 ← CI: fails on high/critical npm advisories that are not allowlisted
 │   │   ├── check-sync.sh                 ← CI: README versions/aliases must match the implementation
@@ -194,7 +194,7 @@ flutter-devcontainer/
 │   │   ├── docker.yml                    ← Builds natively per arch, tests, pushes, signs (main, weekly, manual)
 │   │   ├── dockerhub-description.yml     ← Syncs README.md to Docker Hub on push to main
 │   │   ├── labels.yml                    ← Syncs labels.yml to GitHub labels
-│   │   └── release.yml                   ← Publishes a GitHub Release when a promotion changes the image
+│   │   └── release.yml                   ← Reusable: publishes the GitHub Release named after the image (called by docker.yml)
 │   ├── CODE_OF_CONDUCT.md                ← Contributor Covenant 2.1
 │   ├── CODEOWNERS                        ← Auto-requests reviewer on every PR
 │   ├── CONTRIBUTING.md                   ← Branching, commit and change guidelines
@@ -239,7 +239,7 @@ flutter-devcontainer/
 | `workflows/dependency-drift.yml` | Every Monday 06:00 UTC / manual | Opens, updates or closes one issue listing pinned tool versions that are behind upstream |
 | `workflows/dockerhub-description.yml` | Push to `main` (`README.md` changed) | Updates Docker Hub description |
 | `workflows/dockerhub-description.yml` | Manual dispatch (from `main`) | Forces immediate Docker Hub sync |
-| `workflows/release.yml` | Push to `main` (`docker/`, `scripts/` changed) | Publishes a GitHub Release (`vYYYY.MM.DD`) with generated notes |
+| `workflows/release.yml` | Called by `docker.yml` after a publish from `main` | Publishes a GitHub Release named after the image (`flutter-X.Y.Z.R`) with generated notes |
 | `workflows/labels.yml` | Push to `main` (`.github/labels.yml` changed) | Syncs all labels to GitHub |
 | `workflows/labels.yml` | Manual dispatch | Bootstrap all labels in one go |
 | `dependabot.yml` | Every Monday 09:00 UTC | Scans GitHub Actions and the Docker base image, opens grouped PRs against `develop` |
@@ -277,7 +277,7 @@ Syncs `README.md` to the Docker Hub repository description page on every `README
 
 ### `workflows/release.yml`
 
-Publishes a GitHub Release when a `develop` → `main` promotion changes the image (same path filter as `docker.yml`), so a documentation-only promotion does not produce a release. Releases use calendar versions (`vYYYY.MM.DD`, then `vYYYY.MM.DD.1`, …) because the image has no semantic API — Flutter and the Android SDK float with upstream. Notes are generated from the merged pull requests and grouped by label (`.github/release.yml`).
+A reusable workflow that `docker.yml` calls once the image is on Docker Hub. The release carries the same name as the image it describes: the release tag, the git tag and the Docker tag are all `flutter-X.Y.Z.R` (for example `flutter-3.47.6.1`), and the notes show the `docker pull` command and the digest. A release is created for every push to `main` that changes the image (same path filter as `docker.yml`, so a documentation-only promotion produces none) and for the first image of each new Flutter release picked up by the weekly rebuild; other rebuilds only add an image revision. Notes are generated from the merged pull requests and grouped by label (`.github/release.yml`).
 
 ### `workflows/labels.yml`
 
