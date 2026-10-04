@@ -41,7 +41,7 @@ The fastest route is the [`flutter-template`](https://github.com/alihaidar0/flut
 }
 ```
 
-The image's metadata supplies the `developer` user, the Dart and Flutter extensions and the Flutter SDK path, so nothing else is required. Port 8080 is where `frunw` serves the web target. Use a [tag](#tags) such as `flutter-X.Y.Z` instead of `latest` to stay on a specific Flutter release.
+The image's metadata supplies the `developer` user, the Dart and Flutter extensions and the Flutter SDK path, so nothing else is required. Port 8080 is where `frunw` serves the web target. `latest` always moves to the newest build; a project that must keep building on the same image pins a permanent [tag](#tags) instead (`flutter-X.Y.Z.R` or a digest).
 
 Without Dev Containers, run any tool straight from the image:
 
@@ -182,7 +182,7 @@ flutter-devcontainer/
 │   ├── rulesets/
 │   │   ├── main-protect.json             ← Importable ruleset: protects main
 │   │   ├── develop-protect.json          ← Importable ruleset: protects develop
-│   │   └── tags-protect.json             ← Importable ruleset: protects release tags
+│   │   └── tags-protect.json             ← Importable ruleset: protects release (`flutter-*`) tags
 │   ├── scripts/
 │   │   ├── audit_gate.py                 ← CI: fails on high/critical npm advisories that are not allowlisted
 │   │   ├── check-sync.sh                 ← CI: README versions/aliases must match the implementation
@@ -194,7 +194,7 @@ flutter-devcontainer/
 │   │   ├── docker.yml                    ← Builds natively per arch, tests, pushes, signs (main, weekly, manual)
 │   │   ├── dockerhub-description.yml     ← Syncs README.md to Docker Hub on push to main
 │   │   ├── labels.yml                    ← Syncs labels.yml to GitHub labels
-│   │   └── release.yml                   ← Publishes a GitHub Release when a promotion changes the image
+│   │   └── release.yml                   ← Reusable: publishes the GitHub Release named after the image (called by docker.yml)
 │   ├── CODE_OF_CONDUCT.md                ← Contributor Covenant 2.1
 │   ├── CODEOWNERS                        ← Auto-requests reviewer on every PR
 │   ├── CONTRIBUTING.md                   ← Branching, commit and change guidelines
@@ -202,6 +202,7 @@ flutter-devcontainer/
 │   ├── npm-audit-allowlist.txt           ← Accepted high/critical advisories, each with its reason
 │   ├── PULL_REQUEST_TEMPLATE.md          ← PR checklist (versions, platforms, scope)
 │   ├── dependabot.yml                    ← Weekly grouped updates for GitHub Actions + Docker base image → develop
+│   ├── renovate.json                     ← Weekly PRs for the pins Dependabot cannot see (firebase-tools, pnpm, node digest) → develop
 │   ├── labels.yml                        ← Label definitions — name, color, description
 │   └── release.yml                       ← Release-notes categories (by PR label)
 ├── docker/
@@ -238,10 +239,11 @@ flutter-devcontainer/
 | `workflows/dependency-drift.yml` | Every Monday 06:00 UTC / manual | Opens, updates or closes one issue listing pinned tool versions that are behind upstream |
 | `workflows/dockerhub-description.yml` | Push to `main` (`README.md` changed) | Updates Docker Hub description |
 | `workflows/dockerhub-description.yml` | Manual dispatch (from `main`) | Forces immediate Docker Hub sync |
-| `workflows/release.yml` | Push to `main` (`docker/`, `scripts/` changed) | Publishes a GitHub Release (`vYYYY.MM.DD`) with generated notes |
+| `workflows/release.yml` | Called by `docker.yml` after a publish from `main` | Publishes a GitHub Release named after the image (`flutter-X.Y.Z.R`) with generated notes |
 | `workflows/labels.yml` | Push to `main` (`.github/labels.yml` changed) | Syncs all labels to GitHub |
 | `workflows/labels.yml` | Manual dispatch | Bootstrap all labels in one go |
 | `dependabot.yml` | Every Monday 09:00 UTC | Scans GitHub Actions and the Docker base image, opens grouped PRs against `develop` |
+| `renovate.json` | Before 09:00 UTC on Mondays | Renovate opens one PR per bump of firebase-tools, pnpm or the node base digest (Dockerfile and README together) against `develop` |
 
 Every third-party action is pinned to a full commit SHA (with a `# vX.Y.Z` comment) and every workflow declares least-privilege `permissions:`. Repository settings, rulesets and the branch workflow are documented in [`docs/github-setup.md`](docs/github-setup.md).
 
@@ -267,7 +269,7 @@ The push trigger is path-filtered so a README change never rebuilds the image. T
 
 ### `workflows/dependency-drift.yml`
 
-Dependabot cannot see the tools pinned in `Dockerfile.dev`, so this workflow compares them with their official release channels every Monday and keeps **one** issue up to date. It covers firebase-tools, pnpm (within its pinned major line — a newer major is noted separately), Starship, the Android cmdline-tools build, the digest of the `node` base image, and every advisory accepted in `.github/npm-audit-allowlist.txt` (reported as soon as a patched release exists). The issue closes itself when every pin is current. Bump what it lists as described in [Updating the Image](#updating-the-image).
+Dependabot cannot see the tools pinned in `Dockerfile.dev`, so this workflow compares them with their official release channels every Monday and keeps **one** issue up to date. It covers firebase-tools, pnpm (within its pinned major line — a newer major is noted separately), Starship, the Android cmdline-tools build, the digest of the `node` base image, and every advisory accepted in `.github/npm-audit-allowlist.txt` (reported as soon as a patched release exists). The issue closes itself when every pin is current. Renovate normally opens the PR for firebase-tools, pnpm and the node digest; the issue is the safety net for those and the only prompt for Starship and the cmdline-tools build, whose downloads are checksum-verified and so need a deliberate bump. Bump what it lists as described in [Updating the Image](#updating-the-image).
 
 ### `workflows/dockerhub-description.yml`
 
@@ -275,7 +277,7 @@ Syncs `README.md` to the Docker Hub repository description page on every `README
 
 ### `workflows/release.yml`
 
-Publishes a GitHub Release when a `develop` → `main` promotion changes the image (same path filter as `docker.yml`), so a documentation-only promotion does not produce a release. Releases use calendar versions (`vYYYY.MM.DD`, then `vYYYY.MM.DD.1`, …) because the image has no semantic API — Flutter and the Android SDK float with upstream. The image published that day also carries the matching `YYYY.MM.DD` tag. Notes are generated from the merged pull requests and grouped by label (`.github/release.yml`).
+A reusable workflow that `docker.yml` calls once the image is on Docker Hub. The release carries the same name as the image it describes: the release tag, the git tag and the Docker tag are all `flutter-X.Y.Z.R` (for example `flutter-3.47.6.1`), and the notes show the `docker pull` command and the digest. A release is created for every push to `main` that changes the image (same path filter as `docker.yml`, so a documentation-only promotion produces none) and for the first image of each new Flutter release picked up by the weekly rebuild; other rebuilds only add an image revision. Notes are generated from the merged pull requests and grouped by label (`.github/release.yml`).
 
 ### `workflows/labels.yml`
 
@@ -286,9 +288,13 @@ Keeps GitHub repository labels in sync with `.github/labels.yml`. Labels are ver
 Automatically monitors two ecosystems and opens grouped PRs when updates are found:
 
 - **`github-actions`** — all action versions across every workflow file, grouped into one weekly PR
-- **`docker`** — the Docker ecosystem scan of `docker/`, with every update to the `node` base image ignored because Node is intentionally frozen
+- **`docker`** — the Docker ecosystem scan of `docker/`, with every update to the `node` base image ignored because Node is intentionally frozen (today it finds nothing: Dependabot's parser skips a `FROM` line built from `ARG`s, which is why [Renovate](#renovatejson) refreshes the node digest)
 
-All Dependabot PRs target **`develop`**, not `main` — they land on the integration branch first and are promoted to `main` (which triggers the publish workflow) once verified. A 7-day cooldown delays each upstream release before it is proposed. Node.js is intentionally frozen at version 24 (all update types ignored). Firebase CLI, pnpm, Starship, the Android cmdline-tools build and the node base digest are pinned in `Dockerfile.dev` and bumped manually; the [dependency-drift workflow](#workflowsdependency-driftyml) tells you when they fall behind — see [Updating the Image](#updating-the-image).
+All Dependabot PRs target **`develop`**, not `main` — they land on the integration branch first and are promoted to `main` (which triggers the publish workflow) once verified. A 7-day cooldown delays each upstream release before it is proposed. Node.js is intentionally frozen at version 24 (all update types ignored). Dependabot cannot read the version pins in `Dockerfile.dev`, so those are handled by [Renovate](#renovatejson) and the [dependency-drift workflow](#workflowsdependency-driftyml) — see [Updating the Image](#updating-the-image).
+
+### `renovate.json`
+
+Renovate (the [Renovate GitHub app](https://github.com/apps/renovate), configured in `.github/renovate.json`) covers what Dependabot cannot parse. Its regex rules read `ENV FIREBASE_TOOLS_VERSION`, `ENV PNPM_VERSION` and the digest of the pinned `node` tag in `docker/Dockerfile.dev`, and open one PR per bump against `develop`, at most once a week and only for releases at least 7 days old. Each PR also updates the matching `README.md` entries, so the **Docs sync** check passes without manual edits. Node's major and minor stay frozen: only the digest of the pinned tag may change. Starship and the Android cmdline-tools build are excluded because their downloads are checksum-verified, so a new version needs its checksum copied from the official source in the same edit.
 
 Both ecosystems run every Monday at 09:00 UTC.
 
@@ -302,7 +308,7 @@ Push to main (Dockerfile or scripts changed), every Monday, or manual run
   → Smoke-tests each build (same script as the pull requests)
   → Pushes each architecture by digest, with SBOM + provenance attestations
   → Merges the digests into one manifest list and tags it
-    (:latest, :YYYY.MM.DD, :flutter-<version>, plus :sha-<commit> on pushes)
+    (:latest, :flutter-<version>.<revision>, plus :sha-<commit> on pushes)
   → Signs the manifest list with a keyless Sigstore signature
   → Job summary written to Actions log
 
@@ -335,12 +341,29 @@ Docker pulls the correct platform automatically.
 | Tag | Published when |
 | --- | --- |
 | `latest` | Every publish — always the newest build |
-| `sha-xxxxxxx` | Only when a push to `main` changes the image — immutable per commit; pin to this for rollback. Weekly and manual rebuilds do not create or overwrite it |
-| `flutter-X.Y.Z` | Every publish — the Flutter release baked into the image (for example `flutter-3.47.0`). Pin to this to stay on a Flutter version |
-| `YYYY.MM.DD` | Every publish — the day's build, matching the GitHub Release date |
+| `flutter-X.Y.Z.R` | Every publish — **immutable**: Flutter release `X.Y.Z` and image revision `R` (for example `flutter-3.47.6.1`). `R` starts at 1 for each Flutter release and every new build of that release takes the next free number (`.2`, `.3`, …). The tag to pin an app to; the dotted numeric form lets Dependabot in a consuming repository order and bump it |
+| `sha-xxxxxxx` | Only when a push to `main` changes the image — **immutable** per commit. Weekly and manual rebuilds do not create or overwrite it |
 | `buildcache-amd64`, `buildcache-arm64` | Internal layer cache for the publish workflow — not meant to be pulled |
 
-`latest`, `flutter-X.Y.Z` and `YYYY.MM.DD` are moving tags (a second build with the same Flutter release or on the same day replaces them). Only `sha-xxxxxxx` and the image digest are immutable. To pin a weekly rebuild, use its digest (`alihaidar199527/flutter-devcontainer@sha256:…`).
+Only `latest` moves. `flutter-X.Y.Z.R`, `sha-xxxxxxx` and the image digest never change, and no published tag is ever deleted or overwritten, so an app pinned to one of them pulls the same image today and a year from now. A revision that already exists is never reused: the publish workflow always picks the next free number. The digest (`alihaidar199527/flutter-devcontainer@sha256:…`) is the strictest pin and appears in every run summary.
+
+**Choosing a tag:** use `latest` to always get the newest Flutter and tools; use `flutter-X.Y.Z.R` in projects that must keep building on a known image, and bump it deliberately (the revision increases when the same Flutter release is rebuilt with operating-system or tool updates). The build date is in the image's `org.opencontainers.image.created` label and on Docker Hub. Keep Docker Hub tag-retention or inactive-image clean-up disabled for this repository, otherwise old tags can expire outside this pipeline.
+
+### Rolling back `latest`
+
+If a build reaches `latest` and turns out to be bad, repoint `latest` to the last good permanent tag. No rebuild is needed: the tag is moved on the registry, the digest (and with it the signature and attestations) is unchanged, and both architectures are kept.
+
+```bash
+# 1. find the last good build and confirm what it points to
+docker buildx imagetools inspect alihaidar199527/flutter-devcontainer:flutter-X.Y.Z.R
+
+# 2. repoint latest to it (needs push access to the Docker Hub repository)
+docker buildx imagetools create \
+  -t alihaidar199527/flutter-devcontainer:latest \
+  alihaidar199527/flutter-devcontainer:flutter-X.Y.Z.R
+```
+
+The next publish from `main` (including the Monday rebuild) moves `latest` forward again, so fix the cause on `develop` and promote it, or disable the **Docker** workflow until then. Projects pinned to a permanent tag or digest are not affected by any of this.
 
 ---
 
@@ -449,7 +472,7 @@ All aliases are defined in `scripts/shell_setup.sh` and baked into the image.
 
 ## Updating the Image
 
-The weekly [dependency-drift](#workflowsdependency-driftyml) issue lists every pin below that has fallen behind. For each bump: open a topic branch off `develop`, change the pin (and its checksum where one exists), update this README in the same PR, refresh the "Last verified" date above the `ENV` block, and let CI validate. Merge to `develop`, then promote to `main` when ready to publish. The **Docs sync** check fails the PR if the README and the Dockerfile disagree.
+Renovate opens PRs for firebase-tools, pnpm and the node digest, and the weekly [dependency-drift](#workflowsdependency-driftyml) issue lists every pin below that has fallen behind. For a manual bump: open a topic branch off `develop`, change the pin (and its checksum where one exists), update this README in the same PR, refresh the "Last verified" date above the `ENV` block, and let CI validate. Merge to `develop`, then promote to `main` when ready to publish. The **Docs sync** check fails the PR if the README and the Dockerfile disagree.
 
 ### Upgrading Flutter
 
@@ -457,7 +480,7 @@ Flutter is installed via `git clone -b stable`, so it always tracks the latest s
 
 ### Upgrading Node.js
 
-Node.js is intentionally frozen at 24 LTS via `ARG NODE_VERSION=24` in `docker/Dockerfile.dev`. Dependabot is configured to ignore all Node update types so it will not open PRs for Node upgrades. The base image is additionally pinned by digest (`ARG NODE_IMAGE_DIGEST`), so a build always starts from a known base; the drift workflow reports when the tag has moved to a newer digest.
+Node.js is intentionally frozen at 24 LTS via `ARG NODE_VERSION=24` in `docker/Dockerfile.dev`. Dependabot is configured to ignore all Node update types so it will not open PRs for Node upgrades, and Renovate is limited to refreshing the digest of the pinned tag. The base image is additionally pinned by digest (`ARG NODE_IMAGE_DIGEST`), so a build always starts from a known base; the drift workflow reports when the tag has moved to a newer digest.
 
 To refresh the digest within Node 24 (OS security patches), copy the new index digest of `node:24-trixie-slim` from [hub.docker.com/_/node/tags](https://hub.docker.com/_/node/tags) into `NODE_IMAGE_DIGEST`.
 
