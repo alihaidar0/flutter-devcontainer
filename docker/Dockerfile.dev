@@ -50,10 +50,9 @@ LABEL org.opencontainers.image.licenses="MIT"
 LABEL devcontainer.metadata='[{"remoteUser":"developer","customizations":{"vscode":{"extensions":["Dart-Code.dart-code","Dart-Code.flutter"],"settings":{"dart.flutterSdkPath":"/home/developer/flutter"}}}}]'
 
 # ── Pinned versions ───────────────────────────────────────────
-# Last verified: 2026-10-03.
-#   firebase-tools, pnpm (latest 11.x — pnpm 12 is a major bump that needs its
-#   own review), Starship, the cmdline-tools build and the node base digest
-#   were confirmed against their official release channels on this date.
+# Last verified: 2026-10-04.
+#   firebase-tools, pnpm, Starship, the cmdline-tools build and the node base
+#   digest were confirmed against their official release channels on this date.
 #   Android platform/build-tools levels match Flutter's default compileSdk (36).
 #   The cmdline-tools build number is taken from
 #   https://developer.android.com/studio#command-tools — a wrong build number
@@ -68,7 +67,7 @@ LABEL devcontainer.metadata='[{"remoteUser":"developer","customizations":{"vscod
 # deprecated predecessor ANDROID_SDK_ROOT is kept, with the same value, so older
 # tools still find the SDK.
 ENV FIREBASE_TOOLS_VERSION=15.32.1 \
-    PNPM_VERSION=11.28.2 \
+    PNPM_VERSION=12.9.1 \
     ANDROID_HOME=/home/developer/Android/sdk \
     ANDROID_SDK_ROOT=/home/developer/Android/sdk \
     FLUTTER_ROOT=/home/developer/flutter \
@@ -236,7 +235,13 @@ WORKDIR /home/developer
 # where the shim looks, so every project's `postCreateCommand: pnpm install`
 # works offline, with no per-project workaround. CI verifies this with
 # COREPACK_ENABLE_NETWORK=0.
-RUN corepack prepare pnpm@${PNPM_VERSION} --activate
+# Since pnpm 12 the npm package is only a launcher: Corepack installs no
+# dependencies, so the native binary is downloaded on the first `pnpm` call and
+# kept in the same cache. Calling `pnpm --version` here, with network access,
+# bakes that binary in (per architecture); without it the first call in a
+# container would need the network. It also asserts the pinned version.
+RUN corepack prepare pnpm@${PNPM_VERSION} --activate \
+    && test "$(pnpm --version)" = "${PNPM_VERSION}"
 
 # ── Android SDK ──────────────────────────────────────────────
 # cmdline-tools build 15859902 is the build linked from
