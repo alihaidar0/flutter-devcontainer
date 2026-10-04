@@ -5,6 +5,7 @@ Run by .github/workflows/dependency-drift.yml. Stdlib only.
 
 Sources (all official release channels):
   firebase-tools / pnpm   npm registry dist-tags
+  Flutter                 Google's official release manifest (current stable release)
   Starship                GitHub releases API
   Android cmdline-tools   developer.android.com/studio (the documented download page)
   node base image         Docker Hub registry (digest of the pinned tag)
@@ -80,6 +81,16 @@ def advisory_patch(ident):
     return ", ".join(sorted(patched)) if patched else "none"
 
 
+def latest_flutter():
+    """Version of the current stable Flutter release, from the official release manifest."""
+    data = fetch_json("https://storage.googleapis.com/flutter_infra_release/releases/releases_linux.json")
+    current = data["current_release"]["stable"]
+    versions = [r["version"] for r in data["releases"] if r["hash"] == current and r["channel"] == "stable"]
+    if not versions:
+        raise ValueError("current stable release not found in the release manifest")
+    return versions[0]
+
+
 def latest_starship():
     return fetch_json("https://api.github.com/repos/starship/starship/releases/latest")["tag_name"].lstrip("v")
 
@@ -145,6 +156,8 @@ def main():
             )
     except (urllib.error.URLError, OSError, KeyError, json.JSONDecodeError):
         pass
+
+    record("Flutter", pin(dockerfile, "FLUTTER_VERSION"), latest_flutter)
 
     record("Starship", pin(dockerfile, "STARSHIP_VERSION"), latest_starship)
     record("Android cmdline-tools build", pin(dockerfile, "CMDLINE_TOOLS_BUILD"), latest_cmdline_build)

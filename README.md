@@ -88,7 +88,7 @@ Named volumes are initialised from the image only when they are first created. A
 
 | Tool | Version | Purpose |
 | --- | --- | --- |
-| **Flutter SDK** | stable channel | Flutter framework + Dart SDK |
+| **Flutter SDK** | 3.47.6 (stable channel release) | Flutter framework + Dart SDK |
 | **Dart SDK** | bundled with Flutter | Language runtime (included in Flutter) |
 | **Java (Eclipse Temurin)** | 21 | Required by Android build toolchain and Gradle |
 | **Node.js** | 24 LTS (Debian 13 `trixie-slim`) | Required by Firebase CLI and FlutterFire CLI |
@@ -261,13 +261,13 @@ Runs on every pull request into `develop` or `main`:
 
 Builds and publishes the multi-platform image (`linux/amd64` + `linux/arm64`) to Docker Hub. Each architecture is built **natively** on its own runner (no QEMU emulation), smoke-tested with the same script the pull requests use, and only then pushed by digest. A final job merges both digests into one manifest list, applies the tags and signs the result with a keyless [Sigstore](https://www.sigstore.dev/) signature (see [Verifying the image](#verifying-the-image)). Every build carries SBOM and maximum-detail provenance attestations, and the layer cache lives in `buildcache-<arch>` tags in the registry rather than in the size-limited GitHub Actions cache.
 
-The push trigger is path-filtered so a README change never rebuilds the image. The workflow also runs every Monday, because Flutter tracks the stable channel and the base image receives security patches even when this repository does not change. Pull requests are validated by `ci.yml` instead. The jobs use the `docker-hub` environment, which holds the Docker Hub credentials and is restricted to `main`.
+The push trigger is path-filtered so a README change never rebuilds the image. The workflow also runs every Monday, because the base image and Debian packages receive security patches even when this repository does not change (the Flutter version only moves when its pin is bumped). Pull requests are validated by `ci.yml` instead. The jobs use the `docker-hub` environment, which holds the Docker Hub credentials and is restricted to `main`.
 
 > **Note:** `IMAGE_NAME` is hardcoded (not read from a secret) so the image tag is always valid.
 
 ### `workflows/dependency-drift.yml`
 
-Dependabot cannot see the tools pinned in `Dockerfile.dev`, so this workflow compares them with their official release channels every Monday and keeps **one** issue up to date. It covers firebase-tools, pnpm (within its pinned major line — a newer major is noted separately), Starship, the Android cmdline-tools build, the digest of the `node` base image, and every advisory accepted in `.github/npm-audit-allowlist.txt` (reported as soon as a patched release exists). The issue closes itself when every pin is current. Bump what it lists as described in [Updating the Image](#updating-the-image).
+Dependabot cannot see the tools pinned in `Dockerfile.dev`, so this workflow compares them with their official release channels every Monday and keeps **one** issue up to date. It covers firebase-tools, Flutter (the current stable release from Google's release manifest), pnpm (within its pinned major line — a newer major is noted separately), Starship, the Android cmdline-tools build, the digest of the `node` base image, and every advisory accepted in `.github/npm-audit-allowlist.txt` (reported as soon as a patched release exists). The issue closes itself when every pin is current. Bump what it lists as described in [Updating the Image](#updating-the-image).
 
 ### `workflows/dockerhub-description.yml`
 
@@ -288,7 +288,7 @@ Automatically monitors two ecosystems and opens grouped PRs when updates are fou
 - **`github-actions`** — all action versions across every workflow file, grouped into one weekly PR
 - **`docker`** — the Docker ecosystem scan of `docker/`, with every update to the `node` base image ignored because Node is intentionally frozen
 
-All Dependabot PRs target **`develop`**, not `main` — they land on the integration branch first and are promoted to `main` (which triggers the publish workflow) once verified. A 7-day cooldown delays each upstream release before it is proposed. Node.js is intentionally frozen at version 24 (all update types ignored). Firebase CLI, pnpm, Starship, the Android cmdline-tools build and the node base digest are pinned in `Dockerfile.dev` and bumped manually; the [dependency-drift workflow](#workflowsdependency-driftyml) tells you when they fall behind — see [Updating the Image](#updating-the-image).
+All Dependabot PRs target **`develop`**, not `main` — they land on the integration branch first and are promoted to `main` (which triggers the publish workflow) once verified. A 7-day cooldown delays each upstream release before it is proposed. Node.js is intentionally frozen at version 24 (all update types ignored). Flutter, Firebase CLI, pnpm, Starship, the Android cmdline-tools build and the node base digest are pinned in `Dockerfile.dev` and bumped manually; the [dependency-drift workflow](#workflowsdependency-driftyml) tells you when they fall behind — see [Updating the Image](#updating-the-image).
 
 Both ecosystems run every Monday at 09:00 UTC.
 
@@ -336,11 +336,11 @@ Docker pulls the correct platform automatically.
 | --- | --- |
 | `latest` | Every publish — always the newest build |
 | `sha-xxxxxxx` | Only when a push to `main` changes the image — immutable per commit; pin to this for rollback. Weekly and manual rebuilds do not create or overwrite it |
-| `flutter-X.Y.Z` | Every publish — the Flutter release baked into the image (for example `flutter-3.47.0`). Pin to this to stay on a Flutter version |
+| `flutter-X.Y.Z` | Only the first publish from `main` with that Flutter release (for example `flutter-3.47.6`) — immutable and never republished, so every Flutter version stays restorable. Pin to this to stay on a Flutter version |
 | `YYYY.MM.DD` | Every publish — the day's build, matching the GitHub Release date |
 | `buildcache-amd64`, `buildcache-arm64` | Internal layer cache for the publish workflow — not meant to be pulled |
 
-`latest`, `flutter-X.Y.Z` and `YYYY.MM.DD` are moving tags (a second build with the same Flutter release or on the same day replaces them). Only `sha-xxxxxxx` and the image digest are immutable. To pin a weekly rebuild, use its digest (`alihaidar199527/flutter-devcontainer@sha256:…`).
+`latest` and `YYYY.MM.DD` are moving tags (a second build on the same day replaces the dated tag). `sha-xxxxxxx`, `flutter-X.Y.Z` and the image digest are immutable. `flutter-X.Y.Z` is the first build of that Flutter release, so it does not receive the weekly operating-system patches; to pin a patched rebuild, use its `YYYY.MM.DD` tag or its digest (`alihaidar199527/flutter-devcontainer@sha256:…`).
 
 ---
 
@@ -453,7 +453,13 @@ The weekly [dependency-drift](#workflowsdependency-driftyml) issue lists every p
 
 ### Upgrading Flutter
 
-Flutter is installed via `git clone -b stable`, so it always tracks the latest stable release at build time, and the weekly publish run picks up a new stable release automatically. To get it sooner, trigger the **Docker** workflow from the **Actions** tab (use *Bypass layer cache* to force a fresh clone). The resulting image is tagged `flutter-X.Y.Z` so a project can pin to it.
+Flutter is pinned by `ARG FLUTTER_VERSION` in `docker/Dockerfile.dev` (a release tag of the stable channel), so every build of the same pin contains the same framework. The weekly [dependency-drift](#workflowsdependency-driftyml) issue reports when a newer stable release is out. To bump: verify the version on the [Flutter releases page](https://docs.flutter.dev/release/archive), change the pin, update this README, and confirm the Android platform and build-tools levels still match Flutter's default `compileSdk`.
+
+```dockerfile
+ARG FLUTTER_VERSION=3.47.6
+```
+
+The first publish from `main` with a new Flutter release creates the immutable `flutter-X.Y.Z` tag; older tags are never deleted or overwritten. The build fails if the installed version or channel differs from the pin.
 
 ### Upgrading Node.js
 

@@ -35,6 +35,7 @@ check_in_readme() {
 
 check_in_readme FIREBASE_TOOLS_VERSION "$(pin FIREBASE_TOOLS_VERSION)"
 check_in_readme PNPM_VERSION "$(pin PNPM_VERSION)"
+check_in_readme FLUTTER_VERSION "$(pin FLUTTER_VERSION)"
 check_in_readme STARSHIP_VERSION "$(pin STARSHIP_VERSION)"
 check_in_readme CMDLINE_TOOLS_BUILD "$(pin CMDLINE_TOOLS_BUILD)"
 
