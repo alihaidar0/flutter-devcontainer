@@ -235,7 +235,13 @@ WORKDIR /home/developer
 # where the shim looks, so every project's `postCreateCommand: pnpm install`
 # works offline, with no per-project workaround. CI verifies this with
 # COREPACK_ENABLE_NETWORK=0.
-RUN corepack prepare pnpm@${PNPM_VERSION} --activate
+# Since pnpm 12 the npm package is only a launcher: Corepack installs no
+# dependencies, so the native binary is downloaded on the first `pnpm` call and
+# kept in the same cache. Calling `pnpm --version` here, with network access,
+# bakes that binary in (per architecture); without it the first call in a
+# container would need the network. It also asserts the pinned version.
+RUN corepack prepare pnpm@${PNPM_VERSION} --activate \
+    && test "$(pnpm --version)" = "${PNPM_VERSION}"
 
 # ── Android SDK ──────────────────────────────────────────────
 # cmdline-tools build 15859902 is the build linked from

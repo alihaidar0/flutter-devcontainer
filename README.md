@@ -493,7 +493,7 @@ pnpm is activated via Corepack and pinned via `ENV PNPM_VERSION` in `docker/Dock
 ENV PNPM_VERSION=12.9.1
 ```
 
-> `corepack enable` runs as **root** (it writes shims to the root-owned `/usr/local/bin`), but `corepack prepare pnpm@${PNPM_VERSION} --activate` runs as the non-root `developer` user. Corepack caches the download for the user that runs it, so preparing pnpm as `developer` is what makes `pnpm` work offline for that user. CI proves this by resolving pnpm with `COREPACK_ENABLE_NETWORK=0`.
+> `corepack enable` runs as **root** (it writes shims to the root-owned `/usr/local/bin`), but `corepack prepare pnpm@${PNPM_VERSION} --activate` runs as the non-root `developer` user. Corepack caches the download for the user that runs it, so preparing pnpm as `developer` is what makes `pnpm` work offline for that user. From pnpm 12 the package is only a launcher that downloads its native binary on first use, so the build also runs `pnpm --version` once (as `developer`, with network access) to bake that binary into the cache and to assert the pinned version. CI proves this by resolving pnpm with `COREPACK_ENABLE_NETWORK=0`.
 
 ### Upgrading Android SDK
 
