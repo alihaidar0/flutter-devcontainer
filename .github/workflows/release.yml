@@ -1,24 +1,32 @@
 # .github/workflows/release.yml
 #
-# Every promotion into main that changes the image (same path filter as
-# docker.yml) is published as a GitHub Release with auto-generated notes.
-# Releases use calendar versions (vYYYY.MM.DD, then vYYYY.MM.DD.1, ...) because
-# the image has no semantic API: Flutter and the Android SDK float with
-# upstream. Image tags are independent of release names (see the README, Tags).
+# Reusable workflow, called by docker.yml after an image has been published to
+# Docker Hub. Every release is named after the image it describes: the release
+# tag is the image tag (flutter-X.Y.Z.R), so a release, its git tag and its
+# Docker image always share one name. A release is created for every push to main
+# that changes the image and for every new Flutter release picked up by the
+# weekly rebuild (revision 1); other rebuilds only add an image revision.
 name: Release
 
 on:
-  push:
-    branches:
-      - main
-    paths:
-      - "docker/Dockerfile.dev"
-      - "scripts/**"
-      - ".github/workflows/docker.yml"
-
-concurrency:
-  group: release
-  cancel-in-progress: false
+  workflow_call:
+    inputs:
+      tag:
+        description: "Image tag, also used as the release tag (flutter-X.Y.Z.R)"
+        required: true
+        type: string
+      flutter_version:
+        description: "Flutter release baked into the image"
+        required: true
+        type: string
+      image:
+        description: "Docker Hub repository the image was published to"
+        required: true
+        type: string
+      digest:
+        description: "Digest of the published manifest list"
+        required: true
+        type: string
 
 permissions: {}
 
@@ -30,28 +38,33 @@ jobs:
     permissions:
       contents: write
     steps:
-      - name: Checkout
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          fetch-depth: 0
-          persist-credentials: false
-
       - name: Create release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GH_REPO: ${{ github.repository }}
           TARGET_SHA: ${{ github.sha }}
+          TAG: ${{ inputs.tag }}
+          FLUTTER_VERSION: ${{ inputs.flutter_version }}
+          IMAGE: ${{ inputs.image }}
+          DIGEST: ${{ inputs.digest }}
         run: |
-          base="v$(date -u +%Y.%m.%d)"
-          tag="$base"
-          n=1
-          while gh release view "$tag" > /dev/null 2>&1 || git rev-parse -q --verify "refs/tags/$tag" > /dev/null; do
-            tag="$base.$n"
-            n=$((n + 1))
-          done
-          gh release create "$tag" \
+          if gh release view "$TAG" > /dev/null 2>&1; then
+            echo "::notice::Release $TAG already exists and is left untouched."
+            exit 0
+          fi
+          notes="$(printf '%s\n' \
+            "Docker image for Flutter ${FLUTTER_VERSION}:" \
+            "" \
+            '```bash' \
+            "docker pull ${IMAGE}:${TAG}" \
+            '```' \
+            "" \
+            "Digest: \`${DIGEST}\`" \
+            "")"
+          gh release create "$TAG" \
             --target "$TARGET_SHA" \
-            --title "$tag" \
+            --title "$TAG" \
+            --notes "$notes" \
             --generate-notes \
             --latest
-          echo "Published release $tag" >> "$GITHUB_STEP_SUMMARY"
+          echo "Published release $TAG" >> "$GITHUB_STEP_SUMMARY"

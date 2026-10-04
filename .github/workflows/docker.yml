@@ -184,6 +184,11 @@ jobs:
       contents: read
       # Keyless signing: the job proves its identity to Sigstore with an OIDC token.
       id-token: write
+    outputs:
+      tag: ${{ steps.revision.outputs.tag }}
+      revision: ${{ steps.revision.outputs.number }}
+      flutter_version: ${{ steps.flutter.outputs.version }}
+      digest: ${{ steps.manifest.outputs.digest }}
 
     steps:
       - name: Download digests
@@ -230,6 +235,7 @@ jobs:
             tag="flutter-${FLUTTER_VERSION}.${revision}"
             if ! docker buildx imagetools inspect "${IMAGE_NAME}:${tag}" > /dev/null 2>&1; then
               echo "tag=${tag}" >> "$GITHUB_OUTPUT"
+              echo "number=${revision}" >> "$GITHUB_OUTPUT"
               exit 0
             fi
           done
@@ -299,3 +305,19 @@ jobs:
             echo "| **Triggered by** | \`${EVENT_NAME}\` on \`${REF_NAME}\` |"
             echo "| **Commit** | \`${COMMIT_SHA}\` |"
           } >> "$GITHUB_STEP_SUMMARY"
+
+  # The GitHub Release is named after the image it describes (flutter-X.Y.Z.R). It is
+  # created for every push to main that changes the image and for the first image of
+  # a new Flutter release; the other weekly rebuilds only add an image revision.
+  release:
+    name: Release
+    needs: merge
+    if: github.ref == 'refs/heads/main' && (github.event_name == 'push' || needs.merge.outputs.revision == '1')
+    permissions:
+      contents: write
+    uses: ./.github/workflows/release.yml
+    with:
+      tag: ${{ needs.merge.outputs.tag }}
+      flutter_version: ${{ needs.merge.outputs.flutter_version }}
+      image: alihaidar199527/flutter-devcontainer
+      digest: ${{ needs.merge.outputs.digest }}
