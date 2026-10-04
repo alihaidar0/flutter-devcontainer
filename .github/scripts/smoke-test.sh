@@ -18,12 +18,11 @@ pin() { grep -oE "$1=[0-9][0-9.]*" "${dockerfile}" | head -1 | cut -d= -f2; }
 
 expect_firebase="$(pin FIREBASE_TOOLS_VERSION)"
 expect_pnpm="$(pin PNPM_VERSION)"
-expect_flutter="$(pin FLUTTER_VERSION)"
 expect_starship="$(pin STARSHIP_VERSION)"
 expect_node="$(pin NODE_VERSION)"
 expect_basic_ftp="$(jq -r '.overrides["basic-ftp"]' docker/firebase-tools-overrides.json)"
 expect_android_api="$(grep -oE 'platforms;android-[0-9]+' "${dockerfile}" | head -1 | grep -oE '[0-9]+$')"
-for v in "${expect_firebase}" "${expect_pnpm}" "${expect_flutter}" "${expect_starship}" "${expect_node}" "${expect_basic_ftp}" "${expect_android_api}"; do
+for v in "${expect_firebase}" "${expect_pnpm}" "${expect_starship}" "${expect_node}" "${expect_basic_ftp}" "${expect_android_api}"; do
   test -n "${v}" || { echo "::error::Could not read a pinned version from ${dockerfile}"; exit 1; }
 done
 
@@ -58,8 +57,6 @@ docker run --rm \
     git config --system --get-all safe.directory | grep -Fx /workspace > /dev/null
 
     flutter --version
-    # The pinned release must be what is installed, on the stable channel.
-    test "$(flutter --version --machine 2>/dev/null | jq -r '.frameworkVersion + " " + .channel')" = "${EXPECT_FLUTTER} stable"
     dart --version
     java -version
     node --version | grep "^v${EXPECT_NODE}\." > /dev/null

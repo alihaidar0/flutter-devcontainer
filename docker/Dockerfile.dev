@@ -7,7 +7,7 @@
 #  FlutterFire CLI both require it.
 #
 #  Pre-installed (environment only — no application code):
-#    Flutter SDK      — pinned stable release, tracked by the dependency-drift workflow
+#    Flutter SDK      — stable channel, always latest
 #    Dart SDK         — bundled with Flutter
 #    Android SDK      — platform-tools, android-36, build-tools 36.0.0
 #                       (Gradle comes from each project's own wrapper)
@@ -51,8 +51,8 @@ LABEL devcontainer.metadata='[{"remoteUser":"developer","customizations":{"vscod
 
 # ── Pinned versions ───────────────────────────────────────────
 # Last verified: 2026-10-04.
-#   firebase-tools, pnpm, Flutter, Starship, the cmdline-tools build and the node
-#   base digest were confirmed against their official release channels on this date.
+#   firebase-tools, pnpm, Starship, the cmdline-tools build and the node base
+#   digest were confirmed against their official release channels on this date.
 #   Android platform/build-tools levels match Flutter's default compileSdk (36).
 #   The cmdline-tools build number is taken from
 #   https://developer.android.com/studio#command-tools — a wrong build number
@@ -284,27 +284,17 @@ RUN mkdir -p "${ANDROID_SDK_ROOT}" /home/developer/.android /tmp/cmdline-tools-b
 RUN mkdir -p "${GRADLE_USER_HOME}"
 
 # ── Flutter SDK ──────────────────────────────────────────────
-# FLUTTER_VERSION is a release tag of the stable channel, so every build of the
-# same pin contains the same framework and a new Flutter is a deliberate bump
-# (the weekly dependency-drift issue says when one is out). The tag is fetched
-# shallowly into a local `stable` branch tracking `origin/stable`: Flutter derives
-# its channel from the upstream branch, and a plain `git clone -b <tag>` would
-# report the channel as "[user-branch]".
+# Clones the stable channel (always the latest stable release).
 # precache targets: android and web. iOS and macOS need Xcode and Windows needs
 # its own toolchain, none of which exist on Linux, and a container cannot show a
 # Linux desktop window, so the three desktop platforms are switched off. That
 # keeps `flutter doctor` honest and makes `flutter create` generate only the
 # android, ios and web folders; a project that wants one can re-enable it with
 # `flutter config --enable-<platform>-desktop`.
-ARG FLUTTER_VERSION=3.47.6
-RUN git init -q "${FLUTTER_ROOT}" \
-    && git -C "${FLUTTER_ROOT}" remote add origin https://github.com/flutter/flutter.git \
-    && git -C "${FLUTTER_ROOT}" fetch -q --depth 1 origin "refs/tags/${FLUTTER_VERSION}:refs/remotes/origin/stable" \
-    && git -C "${FLUTTER_ROOT}" checkout -q -B stable origin/stable \
-    && git -C "${FLUTTER_ROOT}" branch --set-upstream-to=origin/stable stable \
+RUN git clone --depth 1 -b stable \
+      https://github.com/flutter/flutter.git "${FLUTTER_ROOT}" \
     && flutter config --no-analytics \
          --no-enable-linux-desktop --no-enable-macos-desktop --no-enable-windows-desktop \
-    && test "$(flutter --version --machine 2>/dev/null | jq -r '.frameworkVersion + " " + .channel')" = "${FLUTTER_VERSION} stable" \
     && flutter precache --android --web \
     && yes | flutter doctor --android-licenses > /dev/null 2>&1 \
     && flutter doctor

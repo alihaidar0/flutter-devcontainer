@@ -81,6 +81,7 @@ The publish workflow also writes layer-cache tags (`buildcache-amd64`, `buildcac
 | Dependabot security updates | On |
 | Grouped security updates | On |
 | Dependabot version updates | Driven by `.github/dependabot.yml` (weekly, grouped, 7-day cooldown, PRs to `develop`) |
+| Renovate | Install the [Renovate GitHub app](https://github.com/apps/renovate) on this repository only; it reads `.github/renovate.json` (firebase-tools, pnpm and the node digest, PRs to `develop`, 7-day minimum release age). Its PRs go through the same `CI passed` check |
 | Secret scanning | On |
 | Push protection | **On** |
 | Private vulnerability reporting | **On** (`SECURITY.md` links to it) |
@@ -144,6 +145,6 @@ git push -u origin fix/example-topic
 # 4. open a PR into develop and merge it with "Create a merge commit"
 ```
 
-Promotion: open a PR `develop` → `main` (title `release: <summary>`) and merge it with a merge commit. When `docker/` or `scripts/` changed, that push triggers **Docker** (builds, tests, publishes and signs `latest`, `sha-xxxxxxx`, `YYYY.MM.DD` and `flutter-X.Y.Z`; the immutable `sha-` tag is created only by push-triggered runs, and `flutter-X.Y.Z` only by the first build of that Flutter release) and **Release** (tag `vYYYY.MM.DD`, notes grouped by PR label). A promotion that changes neither produces no new image and no release.
+Promotion: open a PR `develop` → `main` (title `release: <summary>`) and merge it with a merge commit. When `docker/` or `scripts/` changed, that push triggers **Docker** (builds, tests, publishes and signs `latest`, `flutter-X.Y.Z.R` and `sha-xxxxxxx`; the immutable `sha-` tag is created only by push-triggered runs) and **Release** (tag `vYYYY.MM.DD`, notes grouped by PR label). A promotion that changes neither produces no new image and no release.
 
 Between promotions, **Docker** also runs every Monday so the published image keeps up with Flutter stable and base-image patches, and **Dependency drift** opens (or updates, or closes) one issue listing pinned tool versions that are behind upstream. Handle that issue like any other change: a topic branch off `develop`, see [Updating the Image](../README.md#updating-the-image).

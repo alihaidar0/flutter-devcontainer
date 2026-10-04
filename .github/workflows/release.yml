@@ -4,7 +4,7 @@
 # docker.yml) is published as a GitHub Release with auto-generated notes.
 # Releases use calendar versions (vYYYY.MM.DD, then vYYYY.MM.DD.1, ...) because
 # the image has no semantic API: Flutter and the Android SDK float with
-# upstream. The image published that day also carries the date tag YYYY.MM.DD.
+# upstream. Image tags are independent of release names (see the README, Tags).
 name: Release
 
 on:

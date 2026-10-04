@@ -1,0 +1,91 @@
+{
+  "$schema": "https://docs.renovatebot.com/renovate-schema.json",
+  "extends": [
+    "config:recommended"
+  ],
+  "description": "Renovate only reads the version pins in docker/Dockerfile.dev (and their README mentions) that Dependabot cannot see. GitHub Actions and the Docker base image stay with Dependabot (.github/dependabot.yml). Starship and the cmdline-tools build are checksum-verified downloads and are bumped by hand.",
+  "baseBranchPatterns": [
+    "develop"
+  ],
+  "timezone": "UTC",
+  "schedule": [
+    "before 9am on monday"
+  ],
+  "minimumReleaseAge": "7 days",
+  "prConcurrentLimit": 5,
+  "semanticCommits": "enabled",
+  "semanticCommitType": "build",
+  "semanticCommitScope": "deps",
+  "labels": [
+    "dependencies",
+    "docker"
+  ],
+  "assignees": [
+    "alihaidar0"
+  ],
+  "dependencyDashboard": false,
+  "enabledManagers": [
+    "custom.regex"
+  ],
+  "customManagers": [
+    {
+      "customType": "regex",
+      "description": "firebase-tools pin (Dockerfile and the matching README entries, so the Docs sync check passes)",
+      "managerFilePatterns": [
+        "/^docker/Dockerfile\\.dev$/",
+        "/^README\\.md$/"
+      ],
+      "matchStrings": [
+        "FIREBASE_TOOLS_VERSION=(?<currentValue>[0-9][0-9.]*)",
+        "\\| \\*\\*Firebase CLI\\*\\* \\| (?<currentValue>[0-9][0-9.]*) \\|"
+      ],
+      "depNameTemplate": "firebase-tools",
+      "datasourceTemplate": "npm"
+    },
+    {
+      "customType": "regex",
+      "description": "pnpm pin (Dockerfile and the matching README entries, so the Docs sync check passes)",
+      "managerFilePatterns": [
+        "/^docker/Dockerfile\\.dev$/",
+        "/^README\\.md$/"
+      ],
+      "matchStrings": [
+        "PNPM_VERSION=(?<currentValue>[0-9][0-9.]*)",
+        "\\| \\*\\*pnpm\\*\\* \\| (?<currentValue>[0-9][0-9.]*)",
+        "pnpm (?<currentValue>[0-9][0-9.]*) · Debian"
+      ],
+      "depNameTemplate": "pnpm",
+      "datasourceTemplate": "npm"
+    },
+    {
+      "customType": "regex",
+      "description": "Digest of the pinned node base image tag",
+      "managerFilePatterns": [
+        "/^docker/Dockerfile\\.dev$/"
+      ],
+      "matchStrings": [
+        "ARG NODE_VERSION=(?<major>[0-9]+)\\n[\\s\\S]*?ARG NODE_IMAGE_DIGEST=(?<currentDigest>sha256:[a-f0-9]{64})"
+      ],
+      "depNameTemplate": "node",
+      "currentValueTemplate": "{{{major}}}-trixie-slim",
+      "datasourceTemplate": "docker"
+    }
+  ],
+  "packageRules": [
+    {
+      "description": "Node is frozen on purpose: only the digest of the pinned tag may change.",
+      "matchDatasources": [
+        "docker"
+      ],
+      "matchPackageNames": [
+        "node"
+      ],
+      "matchUpdateTypes": [
+        "major",
+        "minor",
+        "patch"
+      ],
+      "enabled": false
+    }
+  ]
+}
