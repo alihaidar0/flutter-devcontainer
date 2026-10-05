@@ -174,24 +174,34 @@ jobs:
           if-no-files-found: error
           retention-days: 1
 
-  merge:
-    name: Publish multi-platform manifest
+  # Every published image gets a permanent flutter-X.Y.Z.R name: X.Y.Z is the Flutter
+  # release baked into the image and R is the image revision of that release. R is
+  # the first number that is free on Docker Hub AND for which GitHub lets the git tag
+  # be created (a name used by an immutable release stays reserved for good, even
+  # after the release was deleted). The tag is created here, before anything is
+  # pushed, so the image, the git tag and the release can never disagree. The dotted
+  # numeric form lets Dependabot in consuming repositories order and bump it.
+  reserve-tag:
+    name: Reserve the image tag
     needs: build
     if: github.event_name != 'workflow_dispatch' || inputs.push_image == 'true'
     runs-on: ubuntu-24.04
-    timeout-minutes: 15
-    environment: docker-hub
+    timeout-minutes: 10
+    # Creating the git tag is the only reason for contents: write; no secret is used.
     permissions:
-      contents: read
-      # Keyless signing: the job proves its identity to Sigstore with an OIDC token.
-      id-token: write
+      contents: write
     outputs:
       tag: ${{ steps.revision.outputs.tag }}
       revision: ${{ steps.revision.outputs.number }}
       flutter_version: ${{ steps.flutter.outputs.version }}
-      digest: ${{ steps.manifest.outputs.digest }}
 
     steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          sparse-checkout: .github/scripts
+          persist-credentials: false
+
       - name: Download digests
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
@@ -212,6 +222,38 @@ jobs:
           fi
           echo "version=$versions" >> "$GITHUB_OUTPUT"
 
+      - name: Pick the next free revision and reserve its git tag
+        id: revision
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          IMAGE: ${{ env.IMAGE_NAME }}
+          FLUTTER_VERSION: ${{ steps.flutter.outputs.version }}
+          TARGET_SHA: ${{ github.sha }}
+        run: bash .github/scripts/reserve-tag.sh
+
+  merge:
+    name: Publish multi-platform manifest
+    needs: [build, reserve-tag]
+    if: github.event_name != 'workflow_dispatch' || inputs.push_image == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    environment: docker-hub
+    permissions:
+      contents: read
+      # Keyless signing: the job proves its identity to Sigstore with an OIDC token.
+      id-token: write
+    outputs:
+      digest: ${{ steps.manifest.outputs.digest }}
+
+    steps:
+      - name: Download digests
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          path: ${{ runner.temp }}/digests
+          pattern: digests-*
+          merge-multiple: true
+
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
 
@@ -220,28 +262,6 @@ jobs:
         with:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
-
-      # Every publish gets a permanent flutter-X.Y.Z.R tag: X.Y.Z is the Flutter release
-      # baked into the image and R is the image revision of that release (1, 2, 3, ...).
-      # R is the first number not yet on Docker Hub, and no published tag is ever
-      # deleted or overwritten, so an app pinned to one always pulls the same image.
-      # The dotted numeric form lets Dependabot in consuming repositories order and
-      # bump it.
-      - name: Pick the next free revision tag
-        id: revision
-        env:
-          FLUTTER_VERSION: ${{ steps.flutter.outputs.version }}
-        run: |
-          for revision in $(seq 1 99); do
-            tag="flutter-${FLUTTER_VERSION}.${revision}"
-            if ! docker buildx imagetools inspect "${IMAGE_NAME}:${tag}" > /dev/null 2>&1; then
-              echo "tag=${tag}" >> "$GITHUB_OUTPUT"
-              echo "number=${revision}" >> "$GITHUB_OUTPUT"
-              exit 0
-            fi
-          done
-          echo "::error::No free revision for Flutter ${FLUTTER_VERSION} (1-99 are taken)."
-          exit 1
 
       # latest             moving pointer to the newest build (the only moving tag)
       # flutter-X.Y.Z.R    immutable: Flutter release X.Y.Z, image revision R
@@ -254,7 +274,7 @@ jobs:
           images: ${{ env.IMAGE_NAME }}
           tags: |
             type=raw,value=latest,enable=${{ github.ref == 'refs/heads/main' }}
-            type=raw,value=${{ steps.revision.outputs.tag }}
+            type=raw,value=${{ needs.reserve-tag.outputs.tag }}
 
       - name: Create manifest list and push
         id: manifest
@@ -286,7 +306,7 @@ jobs:
         env:
           DIGEST: ${{ steps.manifest.outputs.digest }}
           TAGS: ${{ steps.meta.outputs.tags }}
-          FLUTTER_VERSION: ${{ steps.flutter.outputs.version }}
+          FLUTTER_VERSION: ${{ needs.reserve-tag.outputs.flutter_version }}
           EVENT_NAME: ${{ github.event_name }}
           REF_NAME: ${{ github.ref_name }}
           COMMIT_SHA: ${{ github.sha }}
@@ -306,18 +326,19 @@ jobs:
             echo "| **Commit** | \`${COMMIT_SHA}\` |"
           } >> "$GITHUB_STEP_SUMMARY"
 
-  # The GitHub Release is named after the image it describes (flutter-X.Y.Z.R). It is
-  # created for every push to main that changes the image and for the first image of
-  # a new Flutter release (a manual run); other manual runs only add an image revision.
+  # The GitHub Release is named after the image it describes (flutter-X.Y.Z.R) and is
+  # created from the git tag reserved above. It is created for every push to main that
+  # changes the image and for the first image of a new Flutter release (a manual run);
+  # other manual runs only add an image revision.
   release:
     name: Release
-    needs: merge
-    if: github.ref == 'refs/heads/main' && (github.event_name == 'push' || needs.merge.outputs.revision == '1')
+    needs: [reserve-tag, merge]
+    if: github.ref == 'refs/heads/main' && (github.event_name == 'push' || needs.reserve-tag.outputs.revision == '1')
     permissions:
       contents: write
     uses: ./.github/workflows/release.yml
     with:
-      tag: ${{ needs.merge.outputs.tag }}
-      flutter_version: ${{ needs.merge.outputs.flutter_version }}
+      tag: ${{ needs.reserve-tag.outputs.tag }}
+      flutter_version: ${{ needs.reserve-tag.outputs.flutter_version }}
       image: alihaidar199527/flutter-devcontainer
       digest: ${{ needs.merge.outputs.digest }}
