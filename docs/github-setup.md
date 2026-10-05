@@ -121,6 +121,8 @@ Deleting the **GitHub** repository does not touch Docker Hub: the published imag
 | Pull Requests → Automatically delete head branches | On |
 | Releases → Enable release immutability (if offered) | On |
 
+**Release immutability** locks a published release and its tag, and it reserves the tag name for good: even if the release and the tag are deleted, GitHub never lets that name be used again (creating it fails with "tag_name was used by an immutable release"). The pipeline copes with this by reserving each image's git tag before publishing and skipping names that GitHub refuses (see *Starting over on Docker Hub* in section 13), so keep it on.
+
 The default branch is `develop`, the integration branch. New pull requests, Dependabot *security* updates and the **Run workflow** dropdown therefore start from `develop`, which is where all changes belong. Three consequences are handled in the repository:
 
 - **Scheduled workflows run from the default branch**, so the weekly jobs (Dependabot, Renovate, **Dependency drift**) run from `develop`. None of them needs the Docker Hub credentials. Publishing has no schedule at all: `docker.yml` runs on `main` only.
@@ -142,7 +144,7 @@ The default branch is `develop`, the integration branch. New pull requests, Depe
 | Workflow permissions | **Read repository contents and packages permissions** |
 | Allow GitHub Actions to create and approve pull requests | Off |
 
-Every workflow also declares its own `permissions:` block (default `contents: read`); jobs that need more request it explicitly: the release job of `docker.yml` and the reusable `release.yml` it calls (`contents: write`), `labels.yml` and `dependency-drift.yml` (`issues: write`), `pr-labels.yml` (`pull-requests: write`), and the manifest job of `docker.yml` (`id-token: write` for keyless image signing — no secret is involved). A job can request more than the repository default; nothing else is granted.
+Every workflow also declares its own `permissions:` block (default `contents: read`); jobs that need more request it explicitly: the `reserve-tag` and release jobs of `docker.yml` and the reusable `release.yml` it calls (`contents: write`, to create the git tag and the release), `labels.yml` and `dependency-drift.yml` (`issues: write`), `pr-labels.yml` (`pull-requests: write`), and the manifest job of `docker.yml` (`id-token: write` for keyless image signing — no secret is involved). A job can request more than the repository default; nothing else is granted.
 
 If you add a workflow that uses a new third-party action, add it to the allowed list above and pin it to a full commit SHA, otherwise the run is refused.
 
@@ -205,7 +207,7 @@ Settings → Rules → Rulesets → **New ruleset** → **Import a ruleset**, on
 | --- | --- | --- |
 | `.github/rulesets/main-protect.json` | `main` | No deletion, no force-push, pull request required (merge commits only, conversations resolved, stale approvals dismissed), required check **CI passed** |
 | `.github/rulesets/develop-protect.json` | `develop` | Same as `main`, and the branch must be up to date with `develop` before merging |
-| `.github/rulesets/tags-protect.json` | `flutter-*` tags | Released tags cannot be moved or deleted (creating new tags stays allowed, so the release job works) |
+| `.github/rulesets/tags-protect.json` | `flutter-*` tags | Released tags cannot be moved or deleted (creating new tags stays allowed, because the `reserve-tag` job creates one per image) |
 
 Notes:
 
@@ -240,7 +242,7 @@ On a brand-new repository, in this order:
 - A docs-only PR passes **CI passed** with **Build & test** skipped, and receives its labels from the title within seconds.
 - A PR that edits `docker/Dockerfile.dev` runs **Build & test (amd64)** and **Build & test (arm64)**.
 - A manual run of **Docker** from the `develop` branch is refused by the `docker-hub` environment.
-- After a publish from `main`: the Docker Hub tags `latest` and `flutter-X.Y.Z.R` exist, the release of the same name exists, and this check succeeds:
+- After a publish from `main`: the Docker Hub tags `latest` and `flutter-X.Y.Z.R` exist, the git tag of the same name exists, the release of the same name exists (for a push or a new Flutter release), and this check succeeds:
 
   ```bash
   cosign verify alihaidar199527/flutter-devcontainer:latest \
@@ -283,9 +285,11 @@ Promotion: open a PR `develop` → `main` (for example `https://github.com/aliha
 
 **Starting over on Docker Hub (wipe every image).** Only if you accept that every project pinned to an existing tag breaks until the next publish:
 
-1. Disable the `tags-protect` ruleset (Settings → Rules → Rulesets → **Enforcement status: Disabled**), delete the GitHub releases and their `flutter-*` tags on the Releases and Tags pages, and set the ruleset back to **Active**. Otherwise the new build would reuse an image tag whose release and git tag still describe the old build, and the release job would skip creating a new release.
-2. In Docker Hub, delete all tags of the repository (not the repository itself, which would also remove its description and categories).
-3. Run the publish: merge an image change `develop` → `main`, or run **Docker** by hand on `main`. The first image is `flutter-X.Y.Z.1`, built cold (about 15 to 25 minutes, because the `buildcache-*` tags are gone too). Then run **Docker Hub Description** once to keep the overview in sync.
+1. In Docker Hub, delete all tags of the repository (not the repository itself, which would also remove its description and categories).
+2. Run the publish: merge an image change `develop` → `main`, or run **Docker** by hand on `main`. The image is built cold (about 15 to 25 minutes, because the `buildcache-*` tags are gone too).
+3. Run **Docker Hub Description** once to keep the overview in sync.
+
+You do not need to delete the GitHub releases or git tags, and deleting them would not help. With release immutability on, GitHub keeps every tag name that a published release used reserved for good, so those revision numbers can never be used again. The `reserve-tag` job takes the first revision that is free on Docker Hub **and** creatable on GitHub, so after a wipe the first new image is the next number above the highest one ever released (for example `flutter-3.47.6.3` rather than `.1`), and the numbering simply continues.
 
 **Recreating the whole repository.** Follow sections 1 to 11 in order. The pipeline, the rulesets, the labels and the documentation all come from the pushed branches; the Docker Hub repository and token, the `docker-hub` environment and its secrets, the settings tables above and the Renovate installation are the parts you do by hand. Published images survive on Docker Hub as long as that repository exists, and the first new publish after recreating the GitHub repository continues the `flutter-X.Y.Z.R` sequence, because the revision is the first number not on Docker Hub.
 
