@@ -13,7 +13,7 @@ Out of scope: Flutter project files, `pubspec.yaml`, application code, app-level
 - Work on a topic branch (`feat/…`, `fix/…`, `docs/…`, `ci/…`, `chore/…`, `deps/…`) and open the pull request against **`develop`**.
 - Only a `develop` → `main` pull request may target `main`; a merge into `main` publishes the image.
 - Merge with a **merge commit**. Squash and rebase merging are disabled.
-- Fill in the [pull request template](PULL_REQUEST_TEMPLATE.md), and set labels (they drive the release notes).
+- Fill in the [pull request template](PULL_REQUEST_TEMPLATE.md). Use a Conventional Commit title: the labels that drive the release notes are added from it automatically (adjust them by hand if needed).
 - The **CI passed** check must be green before merging.
 
 The full branch model, repository settings and rulesets are described in [`docs/github-setup.md`](../docs/github-setup.md).

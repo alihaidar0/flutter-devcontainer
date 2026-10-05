@@ -18,7 +18,7 @@
 - [ ] New or updated GitHub Actions are pinned to a full commit SHA with a `# vX.Y.Z` comment
 - [ ] `flutter doctor` output is clean in the built image (if the Flutter/Android toolchain was touched)
 - [ ] No application code, `pubspec.yaml`, or app-level CI was introduced (out of scope for this repo)
-- [ ] Labels are set (they drive the release notes), or `skip-changelog` if this should not appear in them
+- [ ] The PR title is a Conventional Commit (`type(scope): summary`); the labels that drive the release notes are added from it automatically, or add `skip-changelog` if this should not appear in them
 
 ## Related issues
 
