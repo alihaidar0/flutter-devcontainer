@@ -194,6 +194,7 @@ flutter-devcontainer/
 │   │   ├── docker.yml                    ← Builds natively per arch, tests, pushes, signs (push to main when the image changes, or manual)
 │   │   ├── dockerhub-description.yml     ← Syncs README.md to Docker Hub on push to main
 │   │   ├── labels.yml                    ← Syncs labels.yml to GitHub labels
+│   │   ├── pr-labels.yml                 ← Adds labels to a pull request from its Conventional Commit title
 │   │   └── release.yml                   ← Reusable: publishes the GitHub Release named after the image (called by docker.yml)
 │   ├── CODE_OF_CONDUCT.md                ← Contributor Covenant 2.1
 │   ├── CODEOWNERS                        ← Auto-requests reviewer on every PR
@@ -241,6 +242,7 @@ flutter-devcontainer/
 | `workflows/release.yml` | Called by `docker.yml` after a publish from `main` | Publishes a GitHub Release named after the image (`flutter-X.Y.Z.R`) with generated notes |
 | `workflows/labels.yml` | Push to `main` (`.github/labels.yml` changed) | Syncs all labels to GitHub |
 | `workflows/labels.yml` | Manual dispatch | Bootstrap all labels in one go |
+| `workflows/pr-labels.yml` | Pull request opened, edited or reopened (into `develop` or `main`) | Adds labels from the Conventional Commit title so the release notes are grouped without manual work |
 | `dependabot.yml` | Every Monday 09:00 UTC | Scans GitHub Actions and the Docker base image, opens grouped PRs against `develop` |
 | `renovate.json` | Before 09:00 UTC on Mondays | Renovate opens one PR per bump of firebase-tools, pnpm or the node base digest (Dockerfile and README together) against `develop` |
 
@@ -277,6 +279,10 @@ Syncs `README.md` to the Docker Hub repository description page on every `README
 ### `workflows/release.yml`
 
 A reusable workflow that `docker.yml` calls once the image is on Docker Hub. The release carries the same name as the image it describes: the release tag, the git tag and the Docker tag are all `flutter-X.Y.Z.R` (for example `flutter-3.47.6.1`), and the notes show the `docker pull` command and the digest. A release is created for every push to `main` that changes the image (same path filter as `docker.yml`, so a documentation-only promotion produces none) and for the first image of each new Flutter release (for example from a manual run); other rebuilds only add an image revision. Notes are generated from the merged pull requests and grouped by label (`.github/release.yml`).
+
+### `workflows/pr-labels.yml`
+
+Adds labels to a pull request from its title, so the generated release notes (grouped by label in `.github/release.yml`) never depend on someone remembering to set them. `feat` adds `feature`, `fix` adds `bug`, `docs` adds `documentation`, `ci` adds `ci`, `chore`/`refactor`/`style`/`test`/`perf` add `chore`; the scope `deps` adds `dependencies` and `docker` adds `docker`; a `!` after the type, or a `BREAKING CHANGE:` line in the description, adds `breaking change`; and a `develop` → `main` promotion gets `skip-changelog`, because the pull requests it contains are already listed. The workflow only adds labels, so labels set by hand are kept, and a title that is not a Conventional Commit gets a warning instead of a label. It skips bot pull requests (Dependabot and Renovate configure their own labels) and pull requests from forks, which receive a read-only token. The title and description reach the script only through environment variables, and the job has `pull-requests: write` and nothing else. It is deliberately not part of `CI passed`: it validates nothing.
 
 ### `workflows/labels.yml`
 

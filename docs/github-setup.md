@@ -63,6 +63,8 @@ Every workflow also declares its own `permissions:` block (default `contents: re
 
 Workflows run on an explicit runner image (`ubuntu-24.04`, and `ubuntu-24.04-arm` for arm64) rather than `ubuntu-latest`. GitHub moves `ubuntu-latest` to a new Ubuntu release on its own schedule, which changes the toolchain under every job at once and shows up as a warning on each run. Moving to a newer image is a deliberate edit of the `runs-on:` lines (and the matrix runner entries) once the build has been verified on it.
 
+The **PR labels** workflow adds labels from the pull request title and needs the default workflow permissions to allow a job to request `pull-requests: write` (the job asks for it explicitly; nothing else is granted).
+
 ## 3. Environment and secrets
 
 The Docker Hub credentials are only needed when publishing from `main`, so scope them to an environment instead of the whole repository.
