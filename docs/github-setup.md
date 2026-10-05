@@ -28,7 +28,7 @@ Pull requests into `main` from any branch other than `develop` fail the **Verify
 
 | Setting | Value |
 | --- | --- |
-| Default branch | `main` |
+| Default branch | `develop` |
 | Features | Issues on · Wikis off · Projects off · Discussions off |
 | Pull Requests → Allow merge commits | **On** (default message: pull request title and description) |
 | Pull Requests → Allow squash merging | **Off** |
@@ -38,7 +38,11 @@ Pull requests into `main` from any branch other than `develop` fail the **Verify
 | Pull Requests → Automatically delete head branches | On |
 | Releases → Enable release immutability (if offered) | On |
 
-The default branch stays `main` so the repository page, the Docker Hub README and scheduled workflows reflect what is published. Dependabot *version* updates already target `develop`; Dependabot *security* updates are raised against the default branch, so expect those PRs against `main` and re-target them to `develop`.
+The default branch is `develop`, the integration branch. New pull requests, Dependabot *security* updates and the **Run workflow** dropdown therefore start from `develop`, which is where all changes belong. Three consequences are handled in the repository:
+
+- **Scheduled workflows run from the default branch**, so the weekly jobs (Dependabot, Renovate, **Dependency drift**) run from `develop`. None of them needs the Docker Hub credentials. Publishing has no schedule at all: `docker.yml` runs on `main` only.
+- **The repository page shows `develop`**, including documentation that is not published yet. The Docker Hub README is synced from `main` and always reflects what is published.
+- **Manual runs of Docker and Docker Hub Description must pick `main`** in the **Branch** dropdown, because that dropdown defaults to `develop` and the environment refuses it.
 
 ## 2. Settings → Actions → General
 
@@ -59,6 +63,8 @@ Every workflow also declares its own `permissions:` block (default `contents: re
 
 Workflows run on an explicit runner image (`ubuntu-24.04`, and `ubuntu-24.04-arm` for arm64) rather than `ubuntu-latest`. GitHub moves `ubuntu-latest` to a new Ubuntu release on its own schedule, which changes the toolchain under every job at once and shows up as a warning on each run. Moving to a newer image is a deliberate edit of the `runs-on:` lines (and the matrix runner entries) once the build has been verified on it.
 
+The **PR labels** workflow adds labels from the pull request title and needs the default workflow permissions to allow a job to request `pull-requests: write` (the job asks for it explicitly; nothing else is granted).
+
 ## 3. Environment and secrets
 
 The Docker Hub credentials are only needed when publishing from `main`, so scope them to an environment instead of the whole repository.
@@ -68,7 +74,7 @@ The Docker Hub credentials are only needed when publishing from `main`, so scope
 3. Environment secrets → add `DOCKERHUB_USERNAME` and `DOCKERHUB_TOKEN` (a Docker Hub access token with **Read, Write & Delete**).
 4. Settings → Secrets and variables → Actions → **delete** the repository-level copies of both secrets. A repository secret stays readable from any branch, which defeats the environment restriction.
 
-With this in place a manual run of **Docker** or **Docker Hub Description** from any branch other than `main` is refused. The scheduled weekly **Docker** run always executes on the default branch (`main`), so it is allowed.
+With this in place a manual run of **Docker** or **Docker Hub Description** from any branch other than `main` is refused. Nothing on `develop` ever receives the credentials.
 
 The publish workflow also writes layer-cache tags (`buildcache-amd64`, `buildcache-arm64`) and signature tags (`sha256-<digest>.sig`) to the Docker Hub repository. Both are expected; the token's **Read, Write & Delete** scope covers them.
 
@@ -147,4 +153,4 @@ git push -u origin fix/example-topic
 
 Promotion: open a PR `develop` → `main` (title `release: <summary>`) and merge it with a merge commit. When `docker/` or `scripts/` changed, that push triggers **Docker** (builds, tests, publishes and signs `latest`, `flutter-X.Y.Z.R` and `sha-xxxxxxx`; the immutable `sha-` tag is created only by push-triggered runs) and **Release** (called by Docker; the release and its git tag are named after the image, `flutter-X.Y.Z.R`, with notes grouped by PR label). A promotion that changes neither produces no new image and no release.
 
-Between promotions, **Docker** also runs every Monday so the published image keeps up with Flutter stable and base-image patches, and **Dependency drift** opens (or updates, or closes) one issue listing pinned tool versions that are behind upstream. Handle that issue like any other change: a topic branch off `develop`, see [Updating the Image](../README.md#updating-the-image).
+Nothing is published between promotions. **Dependency drift** opens (or updates, or closes) one issue every Monday listing what is behind upstream, and Dependabot and Renovate open pull requests against `develop`. Handle them like any other change: review, merge into `develop`, then promote once; see [Updating the Image](../README.md#updating-the-image).

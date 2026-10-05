@@ -191,9 +191,10 @@ flutter-devcontainer/
 │   ├── workflows/
 │   │   ├── ci.yml                        ← PR validation: lint, format, docs sync, build + smoke test + scan, npm audit → "CI passed"
 │   │   ├── dependency-drift.yml          ← Weekly: reports pinned tool versions that are behind upstream
-│   │   ├── docker.yml                    ← Builds natively per arch, tests, pushes, signs (main, weekly, manual)
+│   │   ├── docker.yml                    ← Builds natively per arch, tests, pushes, signs (push to main when the image changes, or manual)
 │   │   ├── dockerhub-description.yml     ← Syncs README.md to Docker Hub on push to main
 │   │   ├── labels.yml                    ← Syncs labels.yml to GitHub labels
+│   │   ├── pr-labels.yml                 ← Adds labels to a pull request from its Conventional Commit title
 │   │   └── release.yml                   ← Reusable: publishes the GitHub Release named after the image (called by docker.yml)
 │   ├── CODE_OF_CONDUCT.md                ← Contributor Covenant 2.1
 │   ├── CODEOWNERS                        ← Auto-requests reviewer on every PR
@@ -233,8 +234,7 @@ flutter-devcontainer/
 | --- | --- | --- |
 | `workflows/ci.yml` | PR targeting `develop` or `main` | Lint, format, docs sync, build + smoke test + vulnerability scan (`amd64` + `arm64`), `npm audit`, then the aggregate **CI passed** check |
 | `workflows/ci.yml` | Manual dispatch | Same checks on the selected branch |
-| `workflows/docker.yml` | Push to `main` (`docker/`, `scripts/` changed) | Builds each architecture natively, smoke-tests, pushes `:latest`, `:sha-xxx`, a date tag and a Flutter-version tag, and signs the image |
-| `workflows/docker.yml` | Every Monday 05:00 UTC | Same pipeline, so the published image picks up the newest Flutter stable and base-image patches |
+| `workflows/docker.yml` | Push to `main` (`docker/`, `scripts/` changed) | Builds each architecture natively, smoke-tests, pushes `:latest`, `:sha-xxx` and a permanent `:flutter-X.Y.Z.R` tag, and signs the image |
 | `workflows/docker.yml` | Manual dispatch (from `main`) | Same pipeline, with force-rebuild and push toggle |
 | `workflows/dependency-drift.yml` | Every Monday 06:00 UTC / manual | Opens, updates or closes one issue listing pinned tool versions that are behind upstream |
 | `workflows/dockerhub-description.yml` | Push to `main` (`README.md` changed) | Updates Docker Hub description |
@@ -242,6 +242,7 @@ flutter-devcontainer/
 | `workflows/release.yml` | Called by `docker.yml` after a publish from `main` | Publishes a GitHub Release named after the image (`flutter-X.Y.Z.R`) with generated notes |
 | `workflows/labels.yml` | Push to `main` (`.github/labels.yml` changed) | Syncs all labels to GitHub |
 | `workflows/labels.yml` | Manual dispatch | Bootstrap all labels in one go |
+| `workflows/pr-labels.yml` | Pull request opened, edited or reopened (into `develop` or `main`) | Adds labels from the Conventional Commit title so the release notes are grouped without manual work |
 | `dependabot.yml` | Every Monday 09:00 UTC | Scans GitHub Actions and the Docker base image, opens grouped PRs against `develop` |
 | `renovate.json` | Before 09:00 UTC on Mondays | Renovate opens one PR per bump of firebase-tools, pnpm or the node base digest (Dockerfile and README together) against `develop` |
 
@@ -263,7 +264,7 @@ Runs on every pull request into `develop` or `main`:
 
 Builds and publishes the multi-platform image (`linux/amd64` + `linux/arm64`) to Docker Hub. Each architecture is built **natively** on its own runner (no QEMU emulation), smoke-tested with the same script the pull requests use, and only then pushed by digest. A final job merges both digests into one manifest list, applies the tags and signs the result with a keyless [Sigstore](https://www.sigstore.dev/) signature (see [Verifying the image](#verifying-the-image)). Every build carries SBOM and maximum-detail provenance attestations, and the layer cache lives in `buildcache-<arch>` tags in the registry rather than in the size-limited GitHub Actions cache.
 
-The push trigger is path-filtered so a README change never rebuilds the image. The workflow also runs every Monday, because Flutter tracks the stable channel and the base image receives security patches even when this repository does not change. Pull requests are validated by `ci.yml` instead. The jobs use the `docker-hub` environment, which holds the Docker Hub credentials and is restricted to `main`.
+The push trigger is path-filtered (`docker/`, `scripts/`, `.dockerignore` and the workflow itself — everything the build copies or reads), so a README change never rebuilds the image. There is no schedule: the image is published only when an image change is merged to `main`, or when you run the workflow by hand. Pull requests are validated by `ci.yml` instead. The jobs use the `docker-hub` environment, which holds the Docker Hub credentials and is restricted to `main`.
 
 > **Note:** `IMAGE_NAME` is hardcoded (not read from a secret) so the image tag is always valid.
 
@@ -277,7 +278,11 @@ Syncs `README.md` to the Docker Hub repository description page on every `README
 
 ### `workflows/release.yml`
 
-A reusable workflow that `docker.yml` calls once the image is on Docker Hub. The release carries the same name as the image it describes: the release tag, the git tag and the Docker tag are all `flutter-X.Y.Z.R` (for example `flutter-3.47.6.1`), and the notes show the `docker pull` command and the digest. A release is created for every push to `main` that changes the image (same path filter as `docker.yml`, so a documentation-only promotion produces none) and for the first image of each new Flutter release picked up by the weekly rebuild; other rebuilds only add an image revision. Notes are generated from the merged pull requests and grouped by label (`.github/release.yml`).
+A reusable workflow that `docker.yml` calls once the image is on Docker Hub. The release carries the same name as the image it describes: the release tag, the git tag and the Docker tag are all `flutter-X.Y.Z.R` (for example `flutter-3.47.6.1`), and the notes show the `docker pull` command and the digest. A release is created for every push to `main` that changes the image (same path filter as `docker.yml`, so a documentation-only promotion produces none) and for the first image of each new Flutter release (for example from a manual run); other rebuilds only add an image revision. Notes are generated from the merged pull requests and grouped by label (`.github/release.yml`).
+
+### `workflows/pr-labels.yml`
+
+Adds labels to a pull request from its title, so the generated release notes (grouped by label in `.github/release.yml`) never depend on someone remembering to set them. `feat` adds `feature`, `fix` adds `bug`, `docs` adds `documentation`, `ci` adds `ci`, `chore`/`refactor`/`style`/`test`/`perf` add `chore`; the scope `deps` adds `dependencies` and `docker` adds `docker`; a `!` after the type, or a `BREAKING CHANGE:` line in the description, adds `breaking change`; and a `develop` → `main` promotion gets `skip-changelog`, because the pull requests it contains are already listed. The workflow only adds labels, so labels set by hand are kept, and a title that is not a Conventional Commit gets a warning instead of a label. It skips bot pull requests (Dependabot and Renovate configure their own labels) and pull requests from forks, which receive a read-only token. The title and description reach the script only through environment variables, and the job has `pull-requests: write` and nothing else. It is deliberately not part of `CI passed`: it validates nothing.
 
 ### `workflows/labels.yml`
 
@@ -303,7 +308,7 @@ Both ecosystems run every Monday at 09:00 UTC.
 ## How the Build Works
 
 ```text
-Push to main (Dockerfile or scripts changed), every Monday, or manual run
+Push to main (image files changed), or manual run
   → Builds linux/amd64 and linux/arm64 in parallel, each on a native runner
   → Smoke-tests each build (same script as the pull requests)
   → Pushes each architecture by digest, with SBOM + provenance attestations
@@ -342,7 +347,7 @@ Docker pulls the correct platform automatically.
 | --- | --- |
 | `latest` | Every publish — always the newest build |
 | `flutter-X.Y.Z.R` | Every publish — **immutable**: Flutter release `X.Y.Z` and image revision `R` (for example `flutter-3.47.6.1`). `R` starts at 1 for each Flutter release and every new build of that release takes the next free number (`.2`, `.3`, …). The tag to pin an app to; the dotted numeric form lets Dependabot in a consuming repository order and bump it |
-| `sha-xxxxxxx` | Only when a push to `main` changes the image — **immutable** per commit. Weekly and manual rebuilds do not create or overwrite it |
+| `sha-xxxxxxx` | Only when a push to `main` changes the image — **immutable** per commit. Manual rebuilds do not create or overwrite it |
 | `buildcache-amd64`, `buildcache-arm64` | Internal layer cache for the publish workflow — not meant to be pulled |
 
 Only `latest` moves. `flutter-X.Y.Z.R`, `sha-xxxxxxx` and the image digest never change, and no published tag is ever deleted or overwritten, so an app pinned to one of them pulls the same image today and a year from now. A revision that already exists is never reused: the publish workflow always picks the next free number. The digest (`alihaidar199527/flutter-devcontainer@sha256:…`) is the strictest pin and appears in every run summary.
@@ -363,7 +368,7 @@ docker buildx imagetools create \
   alihaidar199527/flutter-devcontainer:flutter-X.Y.Z.R
 ```
 
-The next publish from `main` (including the Monday rebuild) moves `latest` forward again, so fix the cause on `develop` and promote it, or disable the **Docker** workflow until then. Projects pinned to a permanent tag or digest are not affected by any of this.
+The next publish from `main` moves `latest` forward again, so fix the cause on `develop` and promote it, or disable the **Docker** workflow until then. Projects pinned to a permanent tag or digest are not affected by any of this.
 
 ---
 
@@ -472,11 +477,22 @@ All aliases are defined in `scripts/shell_setup.sh` and baked into the image.
 
 ## Updating the Image
 
+### Weekly routine
+
+Every Monday morning (UTC) the automation opens its findings; nothing is published by itself.
+
+1. **Dependabot** (GitHub Actions) and **Renovate** (firebase-tools, pnpm, the node base digest, with their README entries) open pull requests against `develop`.
+2. The **Dependency drift** issue lists what cannot be a pull request: Starship and the Android cmdline-tools build (their checksums must be copied from the official source), the newest Flutter stable compared with the published image, and accepted npm advisories that now have a fix.
+3. Review and merge the pull requests into `develop`; each one passes `CI passed` first, and image changes are built and smoke-tested on both architectures there.
+4. When everything on `develop` is good, open one pull request `develop` → `main`. Merging it builds and publishes the image only if an image file changed (see [`workflows/docker.yml`](#workflowsdockeryml)); a documentation-only promotion publishes nothing.
+
+Direct pushes are blocked on both branches. `main` accepts pull requests from `develop` only; `develop` accepts pull requests from any branch.
+
 Renovate opens PRs for firebase-tools, pnpm and the node digest, and the weekly [dependency-drift](#workflowsdependency-driftyml) issue lists every pin below that has fallen behind. For a manual bump: open a topic branch off `develop`, change the pin (and its checksum where one exists), update this README in the same PR, refresh the "Last verified" date above the `ENV` block, and let CI validate. Merge to `develop`, then promote to `main` when ready to publish. The **Docs sync** check fails the PR if the README and the Dockerfile disagree.
 
 ### Upgrading Flutter
 
-Flutter is installed via `git clone -b stable`, so it always tracks the latest stable release at build time, and the weekly publish run picks up a new stable release automatically. To get it sooner, trigger the **Docker** workflow from the **Actions** tab (use *Bypass layer cache* to force a fresh clone). The resulting image is tagged `flutter-X.Y.Z` so a project can pin to it.
+Flutter is installed via `git clone -b stable`, so every image build uses the newest stable release at that moment. Nothing rebuilds the image on a schedule, so a new Flutter reaches the image the next time an image change is merged to `main`, or when you run it yourself: Actions → **Docker** → **Run workflow**, branch `main` (tick *Bypass layer cache* to force a fresh clone). The weekly dependency-drift issue has a *Flutter (published image)* row that shows when a newer stable is out than the one in the newest published image. The resulting image gets the next permanent `flutter-X.Y.Z.R` tag.
 
 ### Upgrading Node.js
 
