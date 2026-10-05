@@ -99,7 +99,13 @@ ${PATH}"
 #                       targets Android and web, so desktop support is switched
 #                       off in the Flutter layer instead of being carried along.
 #
+# apt-get upgrade installs the Debian security fixes published after the pinned base
+# image was built (the base is digest-pinned, so it can lag the archive by days);
+# without it the published image carries fixable findings that a rebuild alone does
+# not remove.
+# hadolint ignore=DL3005
 RUN apt-get update \
+    && apt-get upgrade -y \
     && apt-get install -y --no-install-recommends \
        curl git unzip zip xz-utils \
        bash bash-completion nano less jq htop tree procps \

@@ -1,7 +1,7 @@
-# Grype configuration for the blocking vulnerability scan in
-# .github/workflows/ci.yml (passed explicitly through the `config` input).
-# docker.yml runs its informational scan without it, so the published image's
-# full report is never filtered.
+# Grype configuration for the vulnerability scans in .github/workflows/ci.yml
+# (blocking, critical) and .github/workflows/docker.yml (informational, high),
+# passed explicitly through the `config` input. Sharing one file means a warning
+# on the published image is always a finding nobody has looked at yet.
 #
 # A finding belongs here only when it cannot be fixed from this repository.
 # Every rule names the exact package version, so it stops matching, and the scan
@@ -25,3 +25,50 @@ ignore:
       name: bcprov-jdk18on
       version: "1.80.2"
       type: java-archive
+
+  # Google's cmdline-tools package (the same one as above) also bundles a Kotlin
+  # compiler jar for the SDK's lint tool, with these libraries shaded inside it.
+  # Fixed upstream in jline 3.30.x and protobuf-java 3.25.5; nothing here can change
+  # a jar inside the Android SDK. All are high severity (not blocking in CI), only
+  # reachable through the SDK's own command-line tools on the developer's machine.
+  - package:
+      name: jline-builtins
+      version: "3.24.1"
+      type: java-archive
+  - package:
+      name: jline-remote-telnet
+      version: "3.24.1"
+      type: java-archive
+  - package:
+      name: protobuf-java
+      version: "2.6.1"
+      type: java-archive
+
+  # npm's own bundled dependencies in the node base image (npm 11.19.0 ships these
+  # versions inside /usr/local/lib/node_modules/npm). The image only runs npm at
+  # build time, to install firebase-tools, and not as a service. The newest npm
+  # (12.x) is a new major and still bundles undici 6.28.0, below the fixed 6.28.1,
+  # so upgrading npm here would not clear the findings. They go away when the Node
+  # base image ships a newer npm, which the node digest bump picks up. The rules are
+  # scoped to npm's own directory, so the same package inside firebase-tools'
+  # dependency tree is never hidden (it is audited by the npm audit job).
+  - package:
+      name: brace-expansion
+      version: "5.0.7"
+      type: npm
+      location: "/usr/local/lib/node_modules/npm/**"
+  - package:
+      name: ip-address
+      version: "10.2.0"
+      type: npm
+      location: "/usr/local/lib/node_modules/npm/**"
+  - package:
+      name: tar
+      version: "7.5.19"
+      type: npm
+      location: "/usr/local/lib/node_modules/npm/**"
+  - package:
+      name: undici
+      version: "6.27.0"
+      type: npm
+      location: "/usr/local/lib/node_modules/npm/**"
