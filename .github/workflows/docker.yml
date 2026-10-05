@@ -16,11 +16,10 @@ on:
       - "docker/Dockerfile.dev"
       - "scripts/**"
       - ".github/workflows/docker.yml"
-  # Weekly rebuild: Flutter tracks the stable channel and the base image gets
-  # security patches, so the published image is refreshed even when nothing in
-  # this repository changed.
-  schedule:
-    - cron: "0 5 * * 1"
+  # The weekly rebuild (Flutter stable and base-image patches, even when nothing in
+  # this repository changed) is started by weekly-rebuild.yml: GitHub runs schedules
+  # only from the default branch (develop), while publishing is restricted to main,
+  # so that workflow dispatches this one on main.
   workflow_dispatch:
     inputs:
       push_image:

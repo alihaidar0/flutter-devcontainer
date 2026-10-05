@@ -1,0 +1,49 @@
+# .github/workflows/weekly-rebuild.yml
+#
+# Starts the weekly image rebuild. GitHub runs scheduled workflows only from the
+# default branch (develop), but the `docker-hub` environment that holds the Docker
+# Hub credentials accepts `main` only. So the schedule lives here, and this
+# workflow dispatches docker.yml on `main`, where it is allowed to publish. No
+# secret is used: dispatching needs only the workflow's own token.
+name: Weekly rebuild
+
+on:
+  schedule:
+    - cron: "0 5 * * 1"
+  workflow_dispatch:
+    inputs:
+      push_image:
+        description: "Push image to Docker Hub? (false = dry run: build and smoke test only)"
+        required: true
+        default: "true"
+        type: choice
+        options:
+          - "true"
+          - "false"
+
+concurrency:
+  group: weekly-rebuild
+  cancel-in-progress: false
+
+permissions: {}
+
+jobs:
+  dispatch:
+    name: Start the Docker workflow on main
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      actions: write
+    steps:
+      - name: Dispatch docker.yml on main
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          PUSH_IMAGE: ${{ inputs.push_image || 'true' }}
+        run: |
+          gh workflow run docker.yml --ref main -f push_image="${PUSH_IMAGE}"
+          {
+            echo "Started the **Docker** workflow on \`main\` (push_image=${PUSH_IMAGE})."
+            echo ""
+            echo "Follow it at ${GITHUB_SERVER_URL}/${GH_REPO}/actions/workflows/docker.yml"
+          } >> "$GITHUB_STEP_SUMMARY"

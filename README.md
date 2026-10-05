@@ -191,10 +191,11 @@ flutter-devcontainer/
 │   ├── workflows/
 │   │   ├── ci.yml                        ← PR validation: lint, format, docs sync, build + smoke test + scan, npm audit → "CI passed"
 │   │   ├── dependency-drift.yml          ← Weekly: reports pinned tool versions that are behind upstream
-│   │   ├── docker.yml                    ← Builds natively per arch, tests, pushes, signs (main, weekly, manual)
+│   │   ├── docker.yml                    ← Builds natively per arch, tests, pushes, signs (push to main, manual, weekly via weekly-rebuild.yml)
 │   │   ├── dockerhub-description.yml     ← Syncs README.md to Docker Hub on push to main
 │   │   ├── labels.yml                    ← Syncs labels.yml to GitHub labels
-│   │   └── release.yml                   ← Reusable: publishes the GitHub Release named after the image (called by docker.yml)
+│   │   ├── release.yml                   ← Reusable: publishes the GitHub Release named after the image (called by docker.yml)
+│   │   └── weekly-rebuild.yml            ← Monday schedule: dispatches docker.yml on main (schedules only run from the default branch)
 │   ├── CODE_OF_CONDUCT.md                ← Contributor Covenant 2.1
 │   ├── CODEOWNERS                        ← Auto-requests reviewer on every PR
 │   ├── CONTRIBUTING.md                   ← Branching, commit and change guidelines
@@ -233,8 +234,8 @@ flutter-devcontainer/
 | --- | --- | --- |
 | `workflows/ci.yml` | PR targeting `develop` or `main` | Lint, format, docs sync, build + smoke test + vulnerability scan (`amd64` + `arm64`), `npm audit`, then the aggregate **CI passed** check |
 | `workflows/ci.yml` | Manual dispatch | Same checks on the selected branch |
-| `workflows/docker.yml` | Push to `main` (`docker/`, `scripts/` changed) | Builds each architecture natively, smoke-tests, pushes `:latest`, `:sha-xxx`, a date tag and a Flutter-version tag, and signs the image |
-| `workflows/docker.yml` | Every Monday 05:00 UTC | Same pipeline, so the published image picks up the newest Flutter stable and base-image patches |
+| `workflows/docker.yml` | Push to `main` (`docker/`, `scripts/` changed) | Builds each architecture natively, smoke-tests, pushes `:latest`, `:sha-xxx` and a permanent `:flutter-X.Y.Z.R` tag, and signs the image |
+| `workflows/weekly-rebuild.yml` | Every Monday 05:00 UTC / manual | Dispatches `docker.yml` on `main`, so the published image picks up the newest Flutter stable and base-image patches |
 | `workflows/docker.yml` | Manual dispatch (from `main`) | Same pipeline, with force-rebuild and push toggle |
 | `workflows/dependency-drift.yml` | Every Monday 06:00 UTC / manual | Opens, updates or closes one issue listing pinned tool versions that are behind upstream |
 | `workflows/dockerhub-description.yml` | Push to `main` (`README.md` changed) | Updates Docker Hub description |
@@ -263,9 +264,13 @@ Runs on every pull request into `develop` or `main`:
 
 Builds and publishes the multi-platform image (`linux/amd64` + `linux/arm64`) to Docker Hub. Each architecture is built **natively** on its own runner (no QEMU emulation), smoke-tested with the same script the pull requests use, and only then pushed by digest. A final job merges both digests into one manifest list, applies the tags and signs the result with a keyless [Sigstore](https://www.sigstore.dev/) signature (see [Verifying the image](#verifying-the-image)). Every build carries SBOM and maximum-detail provenance attestations, and the layer cache lives in `buildcache-<arch>` tags in the registry rather than in the size-limited GitHub Actions cache.
 
-The push trigger is path-filtered so a README change never rebuilds the image. The workflow also runs every Monday, because Flutter tracks the stable channel and the base image receives security patches even when this repository does not change. Pull requests are validated by `ci.yml` instead. The jobs use the `docker-hub` environment, which holds the Docker Hub credentials and is restricted to `main`.
+The push trigger is path-filtered so a README change never rebuilds the image. It also runs every Monday (started by [`weekly-rebuild.yml`](#workflowsweekly-rebuildyml)), because Flutter tracks the stable channel and the base image receives security patches even when this repository does not change. Pull requests are validated by `ci.yml` instead. The jobs use the `docker-hub` environment, which holds the Docker Hub credentials and is restricted to `main`.
 
 > **Note:** `IMAGE_NAME` is hardcoded (not read from a secret) so the image tag is always valid.
+
+### `workflows/weekly-rebuild.yml`
+
+GitHub runs scheduled workflows only from the default branch, which is `develop`, while the `docker-hub` environment that holds the Docker Hub credentials accepts `main` only. So the Monday 05:00 UTC schedule lives in this small workflow, which runs `gh workflow run docker.yml --ref main` using only its own token (`actions: write`, no secrets). The publish then runs on `main`, where it is allowed to. Run it manually (Actions → **Weekly rebuild**) with `push_image` set to `false` for a dry run that builds and smoke-tests both architectures without publishing.
 
 ### `workflows/dependency-drift.yml`
 
@@ -303,7 +308,7 @@ Both ecosystems run every Monday at 09:00 UTC.
 ## How the Build Works
 
 ```text
-Push to main (Dockerfile or scripts changed), every Monday, or manual run
+Push to main (Dockerfile or scripts changed), the Monday rebuild (via weekly-rebuild.yml), or manual run
   → Builds linux/amd64 and linux/arm64 in parallel, each on a native runner
   → Smoke-tests each build (same script as the pull requests)
   → Pushes each architecture by digest, with SBOM + provenance attestations
@@ -476,7 +481,7 @@ Renovate opens PRs for firebase-tools, pnpm and the node digest, and the weekly 
 
 ### Upgrading Flutter
 
-Flutter is installed via `git clone -b stable`, so it always tracks the latest stable release at build time, and the weekly publish run picks up a new stable release automatically. To get it sooner, trigger the **Docker** workflow from the **Actions** tab (use *Bypass layer cache* to force a fresh clone). The resulting image is tagged `flutter-X.Y.Z` so a project can pin to it.
+Flutter is installed via `git clone -b stable`, so it always tracks the latest stable release at build time, and the weekly publish run picks up a new stable release automatically. To get it sooner, trigger the **Docker** workflow from the **Actions** tab (choose branch `main`) (use *Bypass layer cache* to force a fresh clone). The resulting image is tagged `flutter-X.Y.Z` so a project can pin to it.
 
 ### Upgrading Node.js
 
