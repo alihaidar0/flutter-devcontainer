@@ -151,6 +151,6 @@ git push -u origin fix/example-topic
 # 4. open a PR into develop and merge it with "Create a merge commit"
 ```
 
-Promotion: open a PR `develop` → `main` (title `release: <summary>`) and merge it with a merge commit. When `docker/` or `scripts/` changed, that push triggers **Docker** (builds, tests, publishes and signs `latest`, `flutter-X.Y.Z.R` and `sha-xxxxxxx`; the immutable `sha-` tag is created only by push-triggered runs) and **Release** (called by Docker; the release and its git tag are named after the image, `flutter-X.Y.Z.R`, with notes grouped by PR label). A promotion that changes neither produces no new image and no release.
+Promotion: open a PR `develop` → `main` (title `release: <summary>`) and merge it with a merge commit. When `docker/` or `scripts/` changed, that push triggers **Docker** (builds, tests, publishes and signs `latest` and `flutter-X.Y.Z.R`) and **Release** (called by Docker; the release and its git tag are named after the image, `flutter-X.Y.Z.R`, with notes grouped by PR label). A promotion that changes neither produces no new image and no release.
 
 Nothing is published between promotions. **Dependency drift** opens (or updates, or closes) one issue every Monday listing what is behind upstream, and Dependabot and Renovate open pull requests against `develop`. Handle them like any other change: review, merge into `develop`, then promote once; see [Updating the Image](../README.md#updating-the-image).

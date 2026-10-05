@@ -234,7 +234,7 @@ flutter-devcontainer/
 | --- | --- | --- |
 | `workflows/ci.yml` | PR targeting `develop` or `main` | Lint, format, docs sync, build + smoke test + vulnerability scan (`amd64` + `arm64`), `npm audit`, then the aggregate **CI passed** check |
 | `workflows/ci.yml` | Manual dispatch | Same checks on the selected branch |
-| `workflows/docker.yml` | Push to `main` (`docker/`, `scripts/` changed) | Builds each architecture natively, smoke-tests, pushes `:latest`, `:sha-xxx` and a permanent `:flutter-X.Y.Z.R` tag, and signs the image |
+| `workflows/docker.yml` | Push to `main` (`docker/`, `scripts/` changed) | Builds each architecture natively, smoke-tests, pushes `:latest` and a permanent `:flutter-X.Y.Z.R` tag, and signs the image |
 | `workflows/docker.yml` | Manual dispatch (from `main`) | Same pipeline, with force-rebuild and push toggle |
 | `workflows/dependency-drift.yml` | Every Monday 06:00 UTC / manual | Opens, updates or closes one issue listing pinned tool versions that are behind upstream |
 | `workflows/dockerhub-description.yml` | Push to `main` (`README.md` changed) | Updates Docker Hub description |
@@ -313,7 +313,7 @@ Push to main (image files changed), or manual run
   → Smoke-tests each build (same script as the pull requests)
   → Pushes each architecture by digest, with SBOM + provenance attestations
   → Merges the digests into one manifest list and tags it
-    (:latest, :flutter-<version>.<revision>, plus :sha-<commit> on pushes)
+    (:latest and :flutter-<version>.<revision>)
   → Signs the manifest list with a keyless Sigstore signature
   → Job summary written to Actions log
 
@@ -347,10 +347,15 @@ Docker pulls the correct platform automatically.
 | --- | --- |
 | `latest` | Every publish — always the newest build |
 | `flutter-X.Y.Z.R` | Every publish — **immutable**: Flutter release `X.Y.Z` and image revision `R` (for example `flutter-3.47.6.1`). `R` starts at 1 for each Flutter release and every new build of that release takes the next free number (`.2`, `.3`, …). The tag to pin an app to; the dotted numeric form lets Dependabot in a consuming repository order and bump it |
-| `sha-xxxxxxx` | Only when a push to `main` changes the image — **immutable** per commit. Manual rebuilds do not create or overwrite it |
 | `buildcache-amd64`, `buildcache-arm64` | Internal layer cache for the publish workflow — not meant to be pulled |
 
-Only `latest` moves. `flutter-X.Y.Z.R`, `sha-xxxxxxx` and the image digest never change, and no published tag is ever deleted or overwritten, so an app pinned to one of them pulls the same image today and a year from now. A revision that already exists is never reused: the publish workflow always picks the next free number. The digest (`alihaidar199527/flutter-devcontainer@sha256:…`) is the strictest pin and appears in every run summary.
+Only `latest` moves. `flutter-X.Y.Z.R` and the image digest never change, and no published tag is ever deleted or overwritten, so an app pinned to one of them pulls the same image today and a year from now. A revision that already exists is never reused: the publish workflow always picks the next free number. The digest (`alihaidar199527/flutter-devcontainer@sha256:…`) is the strictest pin and appears in every run summary.
+
+**Which commit built an image?** Every image carries it in the `org.opencontainers.image.revision` label, and the publish run's summary shows it next to the digest:
+
+```bash
+docker inspect --format '{{ index .Config.Labels "org.opencontainers.image.revision" }}' alihaidar199527/flutter-devcontainer:flutter-X.Y.Z.R
+```
 
 **Choosing a tag:** use `latest` to always get the newest Flutter and tools; use `flutter-X.Y.Z.R` in projects that must keep building on a known image, and bump it deliberately (the revision increases when the same Flutter release is rebuilt with operating-system or tool updates). The build date is in the image's `org.opencontainers.image.created` label and on Docker Hub. Keep Docker Hub tag-retention or inactive-image clean-up disabled for this repository, otherwise old tags can expire outside this pipeline.
 

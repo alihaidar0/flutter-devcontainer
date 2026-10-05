@@ -22,7 +22,7 @@ body:
     id: image-tag
     attributes:
       label: Image tag
-      description: e.g. `latest`, `sha-abc1234`
+      description: e.g. `latest`, `flutter-3.47.6.2`
       placeholder: latest
     validations:
       required: true
