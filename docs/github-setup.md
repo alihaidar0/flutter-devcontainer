@@ -28,7 +28,7 @@ Pull requests into `main` from any branch other than `develop` fail the **Verify
 
 | Setting | Value |
 | --- | --- |
-| Default branch | `main` |
+| Default branch | `develop` |
 | Features | Issues on · Wikis off · Projects off · Discussions off |
 | Pull Requests → Allow merge commits | **On** (default message: pull request title and description) |
 | Pull Requests → Allow squash merging | **Off** |
@@ -38,7 +38,11 @@ Pull requests into `main` from any branch other than `develop` fail the **Verify
 | Pull Requests → Automatically delete head branches | On |
 | Releases → Enable release immutability (if offered) | On |
 
-The default branch stays `main` so the repository page, the Docker Hub README and scheduled workflows reflect what is published. Dependabot *version* updates already target `develop`; Dependabot *security* updates are raised against the default branch, so expect those PRs against `main` and re-target them to `develop`.
+The default branch is `develop`, the integration branch. New pull requests, Dependabot *security* updates and the **Run workflow** dropdown therefore start from `develop`, which is where all changes belong. Three consequences are handled in the repository:
+
+- **Scheduled workflows run from the default branch.** The `docker-hub` environment (section 3) accepts `main` only, so the Monday rebuild is a small scheduler, `weekly-rebuild.yml`, that dispatches `docker.yml` on `main`. `docker.yml` itself has no `schedule:`.
+- **The repository page shows `develop`**, including documentation that is not published yet. The Docker Hub README is synced from `main` and always reflects what is published.
+- **Manual runs of Docker and Docker Hub Description must pick `main`** in the **Branch** dropdown, because that dropdown defaults to `develop` and the environment refuses it.
 
 ## 2. Settings → Actions → General
 
@@ -68,7 +72,7 @@ The Docker Hub credentials are only needed when publishing from `main`, so scope
 3. Environment secrets → add `DOCKERHUB_USERNAME` and `DOCKERHUB_TOKEN` (a Docker Hub access token with **Read, Write & Delete**).
 4. Settings → Secrets and variables → Actions → **delete** the repository-level copies of both secrets. A repository secret stays readable from any branch, which defeats the environment restriction.
 
-With this in place a manual run of **Docker** or **Docker Hub Description** from any branch other than `main` is refused. The scheduled weekly **Docker** run always executes on the default branch (`main`), so it is allowed.
+With this in place a manual run of **Docker** or **Docker Hub Description** from any branch other than `main` is refused. The weekly rebuild is started by **Weekly rebuild** on `develop`, which dispatches **Docker** on `main`, so it is allowed; nothing on `develop` ever receives the credentials.
 
 The publish workflow also writes layer-cache tags (`buildcache-amd64`, `buildcache-arm64`) and signature tags (`sha256-<digest>.sig`) to the Docker Hub repository. Both are expected; the token's **Read, Write & Delete** scope covers them.
 
