@@ -16,11 +16,22 @@ docker pull alihaidar199527/flutter-devcontainer:latest
 
 ---
 
+## Contents
+
+- [Overview](#overview) · [Quick start](#quick-start) · [Architecture](#architecture)
+- [What's Inside](#whats-inside) · [Platform Support](#platform-support)
+- [Tags](#tags) · [Verifying the image](#verifying-the-image) · [Shell Aliases](#shell-aliases)
+- [Repository Structure](#repository-structure) · [GitHub Automation](#github-automation) · [How the Build Works](#how-the-build-works)
+- [Updating the Image](#updating-the-image) · [Troubleshooting](#troubleshooting)
+- [Repository setup and recovery](#repository-setup-and-recovery) · [Contributing](#contributing)
+
+---
+
 ## Overview
 
 Every Flutter project needs the same developer tooling: Flutter SDK, Android SDK, Dart, Java, Gradle, Firebase, and a productive terminal. Configuring all of this from scratch on every machine — or worse, on every project — wastes time and produces inconsistent environments.
 
-This repository solves that problem with a single shared base image. Push a change here and all your Flutter projects get the upgrade on the next `docker pull` — without touching any project code.
+This repository solves that problem with a single shared base image. Merge an image change to `main` and every project that uses `latest` gets the upgrade on its next `docker pull` — without touching any project code. Projects pinned to a permanent [tag](#tags) keep their image until you bump the tag.
 
 **This repo has one job:** build and publish the base development Docker image to Docker Hub.
 
@@ -41,7 +52,7 @@ The fastest route is the [`flutter-template`](https://github.com/alihaidar0/flut
 }
 ```
 
-The image's metadata supplies the `developer` user, the Dart and Flutter extensions and the Flutter SDK path, so nothing else is required. Port 8080 is where `frunw` serves the web target. `latest` always moves to the newest build; a project that must keep building on the same image pins a permanent [tag](#tags) instead (`flutter-X.Y.Z.R` or a digest).
+The image's metadata supplies the `developer` user, the Dart and Flutter extensions and the Flutter SDK path, so nothing else is required. Port 8080 is where `frunw` serves the web target. `latest` always moves to the newest build; a project that must keep building on the same image pins a permanent [tag](#tags) instead (`flutter-X.Y.Z.R` or a digest), for example `"image": "alihaidar199527/flutter-devcontainer:flutter-3.47.6.1"`.
 
 Without Dev Containers, run any tool straight from the image:
 
@@ -210,7 +221,7 @@ flutter-devcontainer/
 │   ├── Dockerfile.dev                    ← The image recipe ← MAIN FILE
 │   └── firebase-tools-overrides.json     ← npm overrides that patch firebase-tools' transitive dependencies
 ├── docs/
-│   └── github-setup.md                   ← Repository settings, rulesets and branch workflow
+│   └── github-setup.md                   ← Setup and recovery guide: GitHub, Docker Hub and Renovate settings, rulesets, bootstrap order
 ├── scripts/
 │   └── shell_setup.sh                    ← Installs Starship (pinned + verified) and bakes aliases into the image
 ├── .dockerignore                         ← Allowlist: only what the Dockerfile COPYs enters the build context
@@ -234,7 +245,7 @@ flutter-devcontainer/
 | --- | --- | --- |
 | `workflows/ci.yml` | PR targeting `develop` or `main` | Lint, format, docs sync, build + smoke test + vulnerability scan (`amd64` + `arm64`), `npm audit`, then the aggregate **CI passed** check |
 | `workflows/ci.yml` | Manual dispatch | Same checks on the selected branch |
-| `workflows/docker.yml` | Push to `main` (`docker/`, `scripts/` changed) | Builds each architecture natively, smoke-tests, pushes `:latest`, `:sha-xxx` and a permanent `:flutter-X.Y.Z.R` tag, and signs the image |
+| `workflows/docker.yml` | Push to `main` (`docker/`, `scripts/`, `.dockerignore` or `docker.yml` changed) | Builds each architecture natively, smoke-tests, pushes `:latest` and a permanent `:flutter-X.Y.Z.R` tag, and signs the image |
 | `workflows/docker.yml` | Manual dispatch (from `main`) | Same pipeline, with force-rebuild and push toggle |
 | `workflows/dependency-drift.yml` | Every Monday 06:00 UTC / manual | Opens, updates or closes one issue listing pinned tool versions that are behind upstream |
 | `workflows/dockerhub-description.yml` | Push to `main` (`README.md` changed) | Updates Docker Hub description |
@@ -313,8 +324,9 @@ Push to main (image files changed), or manual run
   → Smoke-tests each build (same script as the pull requests)
   → Pushes each architecture by digest, with SBOM + provenance attestations
   → Merges the digests into one manifest list and tags it
-    (:latest, :flutter-<version>.<revision>, plus :sha-<commit> on pushes)
+    (:latest and :flutter-<version>.<revision>)
   → Signs the manifest list with a keyless Sigstore signature
+  → Creates the GitHub Release flutter-<version>.<revision> (for a push, or the first image of a new Flutter release)
   → Job summary written to Actions log
 
 PR targeting develop or main (ci.yml)
@@ -347,10 +359,17 @@ Docker pulls the correct platform automatically.
 | --- | --- |
 | `latest` | Every publish — always the newest build |
 | `flutter-X.Y.Z.R` | Every publish — **immutable**: Flutter release `X.Y.Z` and image revision `R` (for example `flutter-3.47.6.1`). `R` starts at 1 for each Flutter release and every new build of that release takes the next free number (`.2`, `.3`, …). The tag to pin an app to; the dotted numeric form lets Dependabot in a consuming repository order and bump it |
-| `sha-xxxxxxx` | Only when a push to `main` changes the image — **immutable** per commit. Manual rebuilds do not create or overwrite it |
 | `buildcache-amd64`, `buildcache-arm64` | Internal layer cache for the publish workflow — not meant to be pulled |
 
-Only `latest` moves. `flutter-X.Y.Z.R`, `sha-xxxxxxx` and the image digest never change, and no published tag is ever deleted or overwritten, so an app pinned to one of them pulls the same image today and a year from now. A revision that already exists is never reused: the publish workflow always picks the next free number. The digest (`alihaidar199527/flutter-devcontainer@sha256:…`) is the strictest pin and appears in every run summary.
+Every publish from `main` for a push, or for the first image of a new Flutter release, also gets a [GitHub Release](https://github.com/alihaidar0/flutter-devcontainer/releases) with the same name as the tag.
+
+Only `latest` moves. `flutter-X.Y.Z.R` and the image digest never change, and no published tag is ever deleted or overwritten, so an app pinned to one of them pulls the same image today and a year from now. A revision that already exists is never reused: the publish workflow always picks the next free number. The digest (`alihaidar199527/flutter-devcontainer@sha256:…`) is the strictest pin and appears in every run summary.
+
+**Which commit built an image?** Every image carries it in the `org.opencontainers.image.revision` label, and the publish run's summary shows it next to the digest:
+
+```bash
+docker inspect --format '{{ index .Config.Labels "org.opencontainers.image.revision" }}' alihaidar199527/flutter-devcontainer:flutter-X.Y.Z.R
+```
 
 **Choosing a tag:** use `latest` to always get the newest Flutter and tools; use `flutter-X.Y.Z.R` in projects that must keep building on a known image, and bump it deliberately (the revision increases when the same Flutter release is rebuilt with operating-system or tool updates). The build date is in the image's `org.opencontainers.image.created` label and on Docker Hub. Keep Docker Hub tag-retention or inactive-image clean-up disabled for this repository, otherwise old tags can expire outside this pipeline.
 
@@ -593,6 +612,22 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 1. If expired: Docker Hub → **Account Settings → Personal access tokens** → delete → create new → update the secret
 1. Re-run from the **Actions** tab
 
+### Build fails — Docker Hub repository missing
+
+**Symptom:** the publish job fails at the push step with `denied` or `repository does not exist`, for example after the Docker Hub repository was deleted.
+
+Create the repository `alihaidar199527/flutter-devcontainer` as **Public** (see [`docs/github-setup.md`](docs/github-setup.md)), then re-run the failed jobs. After the first successful publish, run **Docker Hub Description** once so the overview shows the README.
+
+### Manual run refused — branch not allowed to deploy to `docker-hub`
+
+**Symptom:** a manual **Docker** or **Docker Hub Description** run stops with "Branch `develop` is not allowed to deploy to `docker-hub`".
+
+The **Branch** dropdown of **Run workflow** defaults to the default branch, `develop`, and the environment accepts `main` only. Choose `main` and run again.
+
+### The release job says the release already exists
+
+The release for a tag is created once and never replaced. This happens when an image tag was recreated but its GitHub release and git tag still exist (for example after wiping Docker Hub). See *Starting over on Docker Hub* in [`docs/github-setup.md`](docs/github-setup.md).
+
 ### Permission denied on `/workspace` or in a named volume
 
 Images published before the user-ID change ran `developer` as UID 1001. A named volume created with such an image stays owned by 1001, and a Linux host user with UID 1000 could not write the project files. Current images use UID/GID 1000.
@@ -673,10 +708,32 @@ Flutter SDK + Android SDK together are ~4–5 GB. Ensure Docker Desktop has at l
 
 ---
 
+## Repository setup and recovery
+
+Everything in the repository (workflows, rulesets as JSON, labels, templates, docs) comes back with a `git push`. The settings that live outside it are recorded, value by value, in [`docs/github-setup.md`](docs/github-setup.md). To recreate everything after deleting the repository, work through this list in order; the guide has the exact values for every step.
+
+1. **GitHub repository:** create `alihaidar0/flutter-devcontainer` (public), push `develop` and `main`, set the About description, website and topics.
+2. **Docker Hub:** create the public repository `alihaidar199527/flutter-devcontainer`, add the short description and categories, create an access token with **Read, Write & Delete**, and leave tag retention off.
+3. **GitHub settings:** default branch `develop`; merge commits only; the Actions allow-list, SHA pinning and read-only workflow permissions; the `docker-hub` environment limited to `main` with the secrets `DOCKERHUB_USERNAME` and `DOCKERHUB_TOKEN`; Dependabot, secret scanning, push protection, private vulnerability reporting and CodeQL.
+4. **Labels:** run the **Labels** workflow once.
+5. **First image:** merge an image change `develop` → `main` (or run **Docker** by hand on `main`), then run **Docker Hub Description** once. The first image is `flutter-X.Y.Z.1`.
+6. **Rulesets:** import `main-protect`, `develop-protect` and `tags-protect` from `.github/rulesets/`.
+7. **Renovate:** install the app on this repository only (*Renovate Only*, *Scan and Alert*).
+8. **Verify** the protection and the published image, then point `flutter-template` and your projects at the new tag.
+
+The rules this setup enforces:
+
+- No direct push to `main` or `develop`. `main` accepts pull requests from `develop` only; `develop` accepts pull requests from any branch.
+- The image is built and pushed to Docker Hub only when an image change is merged `develop` → `main`, or when you run **Docker** by hand on `main`. Nothing is published on a schedule.
+- The weekly automation (Dependabot, Renovate, the dependency-drift issue) only opens pull requests against `develop` or an issue; you review them on Monday and promote once.
+
+---
+
 ## Contributing
 
 - Work on a topic branch (`feat/…`, `fix/…`, `docs/…`, `ci/…`, `chore/…`) and open a PR against `develop`, not `main` — `main` is the publish branch and merges into it trigger a live Docker Hub push. Only a `develop` → `main` PR may target `main`.
 - Merge with a **merge commit** (squash and rebase are disabled). The **CI passed** check must be green.
+- Give the pull request a Conventional Commit title (`type(scope): summary`): its labels, which group the release notes, are added from it automatically.
 - Follow the checklist in [`.github/PULL_REQUEST_TEMPLATE.md`](.github/PULL_REQUEST_TEMPLATE.md) and the guidelines in [`.github/CONTRIBUTING.md`](.github/CONTRIBUTING.md). Repository settings and rulesets are documented in [`docs/github-setup.md`](docs/github-setup.md).
 - Participation is governed by the [Code of Conduct](.github/CODE_OF_CONDUCT.md).
 - Found a vulnerability? See [`SECURITY.md`](SECURITY.md) — do not open a public issue.

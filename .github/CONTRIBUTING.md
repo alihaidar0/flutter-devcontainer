@@ -16,7 +16,7 @@ Out of scope: Flutter project files, `pubspec.yaml`, application code, app-level
 - Fill in the [pull request template](PULL_REQUEST_TEMPLATE.md). Use a Conventional Commit title: the labels that drive the release notes are added from it automatically (adjust them by hand if needed).
 - The **CI passed** check must be green before merging.
 
-The full branch model, repository settings and rulesets are described in [`docs/github-setup.md`](../docs/github-setup.md).
+The full branch model, repository settings, Docker Hub and Renovate setup, and rulesets are described in [`docs/github-setup.md`](../docs/github-setup.md).
 
 ## Commit messages
 
