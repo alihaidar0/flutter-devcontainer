@@ -5,6 +5,7 @@ Run by .github/workflows/dependency-drift.yml. Stdlib only.
 
 Sources (all official release channels):
   firebase-tools / pnpm   npm registry dist-tags
+  Flutter                 Google's release manifest (newest stable) vs the newest flutter-X.Y.Z.R tag on Docker Hub
   Starship                GitHub releases API
   Android cmdline-tools   developer.android.com/studio (the documented download page)
   node base image         Docker Hub registry (digest of the pinned tag)
@@ -26,6 +27,7 @@ import urllib.error
 import urllib.request
 
 DOCKERFILE = "docker/Dockerfile.dev"
+IMAGE = "alihaidar199527/flutter-devcontainer"
 ALLOWLIST = ".github/npm-audit-allowlist.txt"
 TIMEOUT = 30
 
@@ -78,6 +80,32 @@ def advisory_patch(ident):
     patched = {v.get("first_patched_version") for v in data.get("vulnerabilities", [])}
     patched.discard(None)
     return ", ".join(sorted(patched)) if patched else "none"
+
+
+def latest_flutter():
+    """Version of the current stable Flutter release, from the official release manifest."""
+    data = fetch_json("https://storage.googleapis.com/flutter_infra_release/releases/releases_linux.json")
+    current = data["current_release"]["stable"]
+    versions = [r["version"] for r in data["releases"] if r["hash"] == current and r["channel"] == "stable"]
+    if not versions:
+        raise ValueError("current stable release not found in the release manifest")
+    return versions[0]
+
+
+def published_flutter():
+    """Flutter version of the newest flutter-X.Y.Z.R tag published on Docker Hub."""
+    url = f"https://hub.docker.com/v2/repositories/{IMAGE}/tags?page_size=100&name=flutter-"
+    found = []
+    while url:
+        page = fetch_json(url)
+        for tag in page["results"]:
+            match = re.fullmatch(r"flutter-(\d+)\.(\d+)\.(\d+)\.\d+", tag["name"])
+            if match:
+                found.append(tuple(int(part) for part in match.groups()))
+        url = page.get("next")
+    if not found:
+        raise ValueError("no flutter-X.Y.Z.R tag published yet")
+    return ".".join(str(part) for part in max(found))
 
 
 def latest_starship():
@@ -145,6 +173,20 @@ def main():
             )
     except (urllib.error.URLError, OSError, KeyError, json.JSONDecodeError):
         pass
+
+    # Flutter floats (no pin): the row shows whether the newest published image is behind the
+    # newest stable release. The next image build picks the newest stable up.
+    try:
+        published = published_flutter()
+    except (urllib.error.URLError, OSError, ValueError, KeyError, json.JSONDecodeError) as error:
+        rows.append(("Flutter (published image)", "unknown", "unknown", f"could not check ({type(error).__name__})"))
+    else:
+        record("Flutter (published image)", published, latest_flutter)
+        if rows[-1][3] == "behind":
+            notes.append(
+                "Flutter is not pinned: the next image build uses the newest stable. To publish it without "
+                "another image change, run the Docker workflow on `main` (Actions → Docker → Run workflow)."
+            )
 
     record("Starship", pin(dockerfile, "STARSHIP_VERSION"), latest_starship)
     record("Android cmdline-tools build", pin(dockerfile, "CMDLINE_TOOLS_BUILD"), latest_cmdline_build)

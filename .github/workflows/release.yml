@@ -4,8 +4,9 @@
 # Docker Hub. Every release is named after the image it describes: the release
 # tag is the image tag (flutter-X.Y.Z.R), so a release, its git tag and its
 # Docker image always share one name. A release is created for every push to main
-# that changes the image and for every new Flutter release picked up by the
-# weekly rebuild (revision 1); other rebuilds only add an image revision.
+# that changes the image and for the first image of a new Flutter release
+# (revision 1, for example from a manual run); other rebuilds only add an image
+# revision.
 name: Release
 
 on:
