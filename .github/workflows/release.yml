@@ -3,7 +3,9 @@
 # Reusable workflow, called by docker.yml after an image has been published to
 # Docker Hub. Every release is named after the image it describes: the release
 # tag is the image tag (flutter-X.Y.Z.R), so a release, its git tag and its
-# Docker image always share one name. A release is created for every push to main
+# Docker image always share one name. The git tag already exists: docker.yml
+# reserves it before publishing (see .github/scripts/reserve-tag.sh), which is
+# also how a name burned by an immutable release is skipped. A release is created for every push to main
 # that changes the image and for the first image of a new Flutter release
 # (revision 1, for example from a manual run); other rebuilds only add an image
 # revision.
@@ -43,7 +45,6 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GH_REPO: ${{ github.repository }}
-          TARGET_SHA: ${{ github.sha }}
           TAG: ${{ inputs.tag }}
           FLUTTER_VERSION: ${{ inputs.flutter_version }}
           IMAGE: ${{ inputs.image }}
@@ -63,7 +64,7 @@ jobs:
             "Digest: \`${DIGEST}\`" \
             "")"
           gh release create "$TAG" \
-            --target "$TARGET_SHA" \
+            --verify-tag \
             --title "$TAG" \
             --notes "$notes" \
             --generate-notes \

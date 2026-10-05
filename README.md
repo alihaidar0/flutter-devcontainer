@@ -198,7 +198,9 @@ flutter-devcontainer/
 │   │   ├── audit_gate.py                 ← CI: fails on high/critical npm advisories that are not allowlisted
 │   │   ├── check-sync.sh                 ← CI: README versions/aliases must match the implementation
 │   │   ├── check_drift.py                ← Compares pinned versions with upstream (used by dependency-drift.yml)
-│   │   └── smoke-test.sh                 ← Toolchain smoke test shared by ci.yml and docker.yml
+│   │   ├── reserve-tag.sh                ← Picks the next free image revision and reserves its git tag (used by docker.yml)
+│   │   ├── smoke-test.sh                 ← Toolchain smoke test shared by ci.yml and docker.yml
+│   │   └── test-reserve-tag.sh           ← CI: tests reserve-tag.sh with stubbed curl and gh
 │   ├── workflows/
 │   │   ├── ci.yml                        ← PR validation: lint, format, docs sync, build + smoke test + scan, npm audit → "CI passed"
 │   │   ├── dependency-drift.yml          ← Weekly: reports pinned tool versions that are behind upstream
@@ -273,7 +275,7 @@ Runs on every pull request into `develop` or `main`:
 
 ### `workflows/docker.yml`
 
-Builds and publishes the multi-platform image (`linux/amd64` + `linux/arm64`) to Docker Hub. Each architecture is built **natively** on its own runner (no QEMU emulation), smoke-tested with the same script the pull requests use, and only then pushed by digest. A final job merges both digests into one manifest list, applies the tags and signs the result with a keyless [Sigstore](https://www.sigstore.dev/) signature (see [Verifying the image](#verifying-the-image)). Every build carries SBOM and maximum-detail provenance attestations, and the layer cache lives in `buildcache-<arch>` tags in the registry rather than in the size-limited GitHub Actions cache.
+Builds and publishes the multi-platform image (`linux/amd64` + `linux/arm64`) to Docker Hub. Each architecture is built **natively** on its own runner (no QEMU emulation), smoke-tested with the same script the pull requests use, and only then pushed by digest. Before anything is pushed, a `reserve-tag` job picks the next free revision `R` (free on Docker Hub, and creatable as a git tag on GitHub: a name used by an immutable release stays reserved even after the release is deleted, so those numbers are skipped) and creates the git tag `flutter-X.Y.Z.R` with `.github/scripts/reserve-tag.sh`. A final job merges both digests into one manifest list, applies the tags and signs the result with a keyless [Sigstore](https://www.sigstore.dev/) signature (see [Verifying the image](#verifying-the-image)). Every build carries SBOM and maximum-detail provenance attestations, and the layer cache lives in `buildcache-<arch>` tags in the registry rather than in the size-limited GitHub Actions cache.
 
 The push trigger is path-filtered (`docker/`, `scripts/`, `.dockerignore` and the workflow itself — everything the build copies or reads), so a README change never rebuilds the image. There is no schedule: the image is published only when an image change is merged to `main`, or when you run the workflow by hand. Pull requests are validated by `ci.yml` instead. The jobs use the `docker-hub` environment, which holds the Docker Hub credentials and is restricted to `main`.
 
@@ -289,7 +291,7 @@ Syncs `README.md` to the Docker Hub repository description page on every `README
 
 ### `workflows/release.yml`
 
-A reusable workflow that `docker.yml` calls once the image is on Docker Hub. The release carries the same name as the image it describes: the release tag, the git tag and the Docker tag are all `flutter-X.Y.Z.R` (for example `flutter-3.47.6.1`), and the notes show the `docker pull` command and the digest. A release is created for every push to `main` that changes the image (same path filter as `docker.yml`, so a documentation-only promotion produces none) and for the first image of each new Flutter release (for example from a manual run); other rebuilds only add an image revision. Notes are generated from the merged pull requests and grouped by label (`.github/release.yml`).
+A reusable workflow that `docker.yml` calls once the image is on Docker Hub. The release carries the same name as the image it describes: the release tag, the git tag and the Docker tag are all `flutter-X.Y.Z.R` (for example `flutter-3.47.6.3`), and the release is created from the git tag that `docker.yml` reserved before publishing. The notes show the `docker pull` command and the digest. A release is created for every push to `main` that changes the image (same path filter as `docker.yml`, so a documentation-only promotion produces none) and for the first image of each new Flutter release (for example from a manual run); other rebuilds only add an image revision. Notes are generated from the merged pull requests and grouped by label (`.github/release.yml`).
 
 ### `workflows/pr-labels.yml`
 
@@ -323,6 +325,7 @@ Push to main (image files changed), or manual run
   → Builds linux/amd64 and linux/arm64 in parallel, each on a native runner
   → Smoke-tests each build (same script as the pull requests)
   → Pushes each architecture by digest, with SBOM + provenance attestations
+  → Reserves the next free flutter-<version>.<revision> (Docker Hub and GitHub git tag)
   → Merges the digests into one manifest list and tags it
     (:latest and :flutter-<version>.<revision>)
   → Signs the manifest list with a keyless Sigstore signature
@@ -363,7 +366,7 @@ Docker pulls the correct platform automatically.
 
 Every publish from `main` for a push, or for the first image of a new Flutter release, also gets a [GitHub Release](https://github.com/alihaidar0/flutter-devcontainer/releases) with the same name as the tag.
 
-Only `latest` moves. `flutter-X.Y.Z.R` and the image digest never change, and no published tag is ever deleted or overwritten, so an app pinned to one of them pulls the same image today and a year from now. A revision that already exists is never reused: the publish workflow always picks the next free number. The digest (`alihaidar199527/flutter-devcontainer@sha256:…`) is the strictest pin and appears in every run summary.
+Only `latest` moves. `flutter-X.Y.Z.R` and the image digest never change, and no published tag is ever deleted or overwritten, so an app pinned to one of them pulls the same image today and a year from now. A revision number is never reused: the publish workflow takes the next revision that is free on Docker Hub and can be created as a git tag, so revisions always increase but can skip numbers (for example after wiping Docker Hub, because GitHub keeps a tag name used by an immutable release reserved for good). Every image also has a git tag of the same name. The digest (`alihaidar199527/flutter-devcontainer@sha256:…`) is the strictest pin and appears in every run summary.
 
 **Which commit built an image?** Every image carries it in the `org.opencontainers.image.revision` label, and the publish run's summary shows it next to the digest:
 
@@ -626,7 +629,17 @@ The **Branch** dropdown of **Run workflow** defaults to the default branch, `dev
 
 ### The release job says the release already exists
 
-The release for a tag is created once and never replaced. This happens when an image tag was recreated but its GitHub release and git tag still exist (for example after wiping Docker Hub). See *Starting over on Docker Hub* in [`docs/github-setup.md`](docs/github-setup.md).
+The release for a tag is created once and never replaced, so a re-run of the release job for a tag that already has a release shows this notice and does nothing. It is harmless.
+
+### The publish stops in the "Reserve the image tag" job
+
+The job decides the image name before anything is pushed:
+
+- `Unexpected answer from Docker Hub (HTTP …)`: Docker Hub was unreachable or rate-limited. Re-run the failed jobs.
+- `Could not reserve flutter-…` with `Resource not accessible by integration`: the job lacks permission to create the git tag. It requests `contents: write` itself; check Settings → Actions → General and any rulesets that restrict creating `flutter-*` tags (`tags-protect` must not restrict creations).
+- `No free revision`: 99 revisions of one Flutter release are taken. Wait for a newer Flutter or raise `MAX_REVISION` in `.github/scripts/reserve-tag.sh`.
+
+A name that GitHub refuses because it belongs to a deleted immutable release is skipped automatically (a notice says so); it is not an error.
 
 ### Permission denied on `/workspace` or in a named volume
 

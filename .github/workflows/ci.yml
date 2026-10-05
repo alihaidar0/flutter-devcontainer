@@ -95,6 +95,9 @@ jobs:
       - name: ShellCheck (shell scripts)
         run: git ls-files -z '*.sh' | xargs -0 shellcheck
 
+      - name: Test the tag reservation script
+        run: bash .github/scripts/test-reserve-tag.sh
+
       - name: Syntax check (Python helper)
         run: python3 -m py_compile .github/scripts/check_drift.py .github/scripts/audit_gate.py
 
