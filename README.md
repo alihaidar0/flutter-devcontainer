@@ -431,7 +431,7 @@ All aliases are defined in `scripts/shell_setup.sh` and baked into the image.
 | `fbuildweb` | `flutter build web --release` | Release web build |
 | `ftest` | `flutter test` | Run tests |
 | `ftestc` | `flutter test --coverage` | Run tests with coverage |
-| `fanalyze` | `flutter analyze` | Static analysis |
+| `fanalyze` | `flutter analyze --fatal-infos` | Static analysis (info-level lints fail, as in CI) |
 | `fformat` | `dart format .` | Format all Dart files |
 | `fformatcheck` | `dart format --set-exit-if-changed .` | Format check (CI mode) |
 | `fdoctor` | `flutter doctor -v` | Verbose environment check |
