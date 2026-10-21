@@ -66,8 +66,8 @@ LABEL devcontainer.metadata='[{"remoteUser":"developer","customizations":{"vscod
 # ANDROID_HOME is the variable Android's tooling documents today; its
 # deprecated predecessor ANDROID_SDK_ROOT is kept, with the same value, so older
 # tools still find the SDK.
-ENV FIREBASE_TOOLS_VERSION=15.32.1 \
-    PNPM_VERSION=12.9.1 \
+ENV FIREBASE_TOOLS_VERSION=15.33.0 \
+    PNPM_VERSION=12.13.0 \
     ANDROID_HOME=/home/developer/Android/sdk \
     ANDROID_SDK_ROOT=/home/developer/Android/sdk \
     FLUTTER_ROOT=/home/developer/flutter \
