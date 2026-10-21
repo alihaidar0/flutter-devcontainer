@@ -140,7 +140,7 @@ flutter drive --driver=test_driver/integration_test.dart \
 | **pnpm** | 12.13.0 | Fast, disk-efficient package manager, activated via Corepack at build time (cached for the `developer` user — no download on first use) |
 | **GitHub CLI** | latest | `gh pr create`, `gh run watch`, `gh auth login` |
 | **openssh-client** | — | `git push` via SSH from inside the container |
-| **Starship** | 1.26.0 | Terminal prompt — git branch and status, Dart and Node versions |
+| **Starship** | 1.27.0 | Terminal prompt — git branch and status, Dart and Node versions |
 | **Utilities** | — | curl, git, jq, less, nano, htop, tree, procps, bash-completion (git and `gh` tab completion) |
 
 ### What is NOT inside
@@ -585,7 +585,7 @@ Copy the build number and the SHA-256 together from the [Android Studio download
 Starship is installed from a pinned release tarball, not an install script. Update the three args above `COPY scripts/shell_setup.sh` in `docker/Dockerfile.dev`:
 
 ```dockerfile
-ARG STARSHIP_VERSION=1.26.0
+ARG STARSHIP_VERSION=1.27.0
 ARG STARSHIP_SHA256_AMD64=<contents of starship-x86_64-unknown-linux-musl.tar.gz.sha256>
 ARG STARSHIP_SHA256_ARM64=<contents of starship-aarch64-unknown-linux-musl.tar.gz.sha256>
 ```
