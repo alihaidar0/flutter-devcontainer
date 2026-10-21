@@ -50,7 +50,7 @@ LABEL org.opencontainers.image.licenses="MIT"
 LABEL devcontainer.metadata='[{"remoteUser":"developer","customizations":{"vscode":{"extensions":["Dart-Code.dart-code","Dart-Code.flutter"],"settings":{"dart.flutterSdkPath":"/home/developer/flutter"}}}}]'
 
 # ── Pinned versions ───────────────────────────────────────────
-# Last verified: 2026-10-04.
+# Last verified: 2026-10-21.
 #   firebase-tools, pnpm, Starship, the cmdline-tools build and the node base
 #   digest were confirmed against their official release channels on this date.
 #   Android platform/build-tools levels match Flutter's default compileSdk (36).
@@ -66,8 +66,8 @@ LABEL devcontainer.metadata='[{"remoteUser":"developer","customizations":{"vscod
 # ANDROID_HOME is the variable Android's tooling documents today; its
 # deprecated predecessor ANDROID_SDK_ROOT is kept, with the same value, so older
 # tools still find the SDK.
-ENV FIREBASE_TOOLS_VERSION=15.32.1 \
-    PNPM_VERSION=12.9.1 \
+ENV FIREBASE_TOOLS_VERSION=15.33.0 \
+    PNPM_VERSION=12.13.0 \
     ANDROID_HOME=/home/developer/Android/sdk \
     ANDROID_SDK_ROOT=/home/developer/Android/sdk \
     FLUTTER_ROOT=/home/developer/flutter \
@@ -317,9 +317,9 @@ RUN dart pub global activate flutterfire_cli
 # shell_setup.sh as environment variables.
 # After install, fix ownership of all developer home config files.
 USER root
-ARG STARSHIP_VERSION=1.26.0
-ARG STARSHIP_SHA256_AMD64=b7c232b0e8249d8e55a40beb79c5c43a7d370f3f9408bd215deb0170daeaadf3
-ARG STARSHIP_SHA256_ARM64=dc30189378d2f2e287384e8a692d3f95ad1df64cf0e8c36aa9201516028aed6b
+ARG STARSHIP_VERSION=1.27.0
+ARG STARSHIP_SHA256_AMD64=10c8eb4cb3b761d9bf59ea828444c2dab36c900b7d69a69e08814b286969df89
+ARG STARSHIP_SHA256_ARM64=341f5cbf24699fa0b27ec88965ad25f862ea09e15d35a543fd6ffdff1d2aa00d
 COPY scripts/shell_setup.sh /tmp/shell_setup.sh
 RUN bash /tmp/shell_setup.sh \
     && chown -R developer:developer /home/developer \
