@@ -540,7 +540,7 @@ ENV FIREBASE_TOOLS_VERSION=15.33.0 \
     PNPM_VERSION=12.14.0 \
 ```
 
-firebase-tools is installed into its own prefix (`/opt/firebase-tools`, with `firebase` symlinked into `/usr/local/bin`) instead of with `npm install -g`, because only a local install honours npm `overrides`. `docker/firebase-tools-overrides.json` pins patched versions of transitive dependencies that upstream has not picked up yet (today the `uuid` used by `gaxios`). After a version bump:
+firebase-tools is installed into its own prefix (`/opt/firebase-tools`, with `firebase` symlinked into `/usr/local/bin`) instead of with `npm install -g`, because only a local install honours npm `overrides`. `docker/firebase-tools-overrides.json` pins patched versions of transitive dependencies that upstream has not picked up yet (today `basic-ftp` and the `uuid` used by `gaxios`). After a version bump:
 
 1. Read the **npm audit** job summary of the pull request. If an advisory is now fixed upstream, delete its override.
 1. If a new high or critical advisory appears with a patched release, add an override for it, and check that the CLI still loads (`firebase --help`, `firebase deploy --help`).
