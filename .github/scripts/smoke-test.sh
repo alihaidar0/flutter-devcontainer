@@ -20,9 +20,10 @@ expect_firebase="$(pin FIREBASE_TOOLS_VERSION)"
 expect_pnpm="$(pin PNPM_VERSION)"
 expect_starship="$(pin STARSHIP_VERSION)"
 expect_node="$(pin NODE_VERSION)"
-expect_basic_ftp="$(jq -r '.overrides["basic-ftp"]' docker/firebase-tools-overrides.json)"
+expect_uuid="$(jq -r '.overrides.gaxios.uuid' docker/firebase-tools-overrides.json)"
+expect_basic_ftp="$(jq -r '.overrides["basic-ftp"] // empty' docker/firebase-tools-overrides.json)"
 expect_android_api="$(grep -oE 'platforms;android-[0-9]+' "${dockerfile}" | head -1 | grep -oE '[0-9]+$')"
-for v in "${expect_firebase}" "${expect_pnpm}" "${expect_starship}" "${expect_node}" "${expect_basic_ftp}" "${expect_android_api}"; do
+for v in "${expect_firebase}" "${expect_pnpm}" "${expect_starship}" "${expect_node}" "${expect_uuid}" "${expect_android_api}"; do
   test -n "${v}" || { echo "::error::Could not read a pinned version from ${dockerfile}"; exit 1; }
 done
 
@@ -32,6 +33,7 @@ docker run --rm \
   -e EXPECT_PNPM="${expect_pnpm}" \
   -e EXPECT_STARSHIP="${expect_starship}" \
   -e EXPECT_NODE="${expect_node}" \
+  -e EXPECT_UUID="${expect_uuid}" \
   -e EXPECT_BASIC_FTP="${expect_basic_ftp}" \
   -e EXPECT_ANDROID_API="${expect_android_api}" \
   "${image}" bash -c '
@@ -62,9 +64,14 @@ docker run --rm \
     node --version | grep "^v${EXPECT_NODE}\." > /dev/null
     test "$(firebase --version)" = "${EXPECT_FIREBASE}"
     # firebase-tools lives in its own prefix so the security overrides apply;
-    # prove the patched dependency is the one that was installed.
+    # prove the patched dependencies are the ones that were installed.
     readlink -f "$(command -v firebase)" | grep -F /opt/firebase-tools/ > /dev/null
-    test "$(node -p "require(\"/opt/firebase-tools/node_modules/basic-ftp/package.json\").version")" = "${EXPECT_BASIC_FTP}"
+    test "$(node -p "require(require.resolve(\"uuid/package.json\", {paths: [\"/opt/firebase-tools/node_modules/gaxios\"]})).version")" = "${EXPECT_UUID}"
+    # npm installs nothing for an override alone: once upstream drops a
+    # dependency the package is simply absent, so only check it when present.
+    if [ -n "${EXPECT_BASIC_FTP}" ] && [ -e /opt/firebase-tools/node_modules/basic-ftp ]; then
+      test "$(node -p "require(\"/opt/firebase-tools/node_modules/basic-ftp/package.json\").version")" = "${EXPECT_BASIC_FTP}"
+    fi
     corepack --version
     test "${COREPACK_ENABLE_DOWNLOAD_PROMPT}" = "0"
     # pnpm must resolve from the cache baked in at build time: with the network
