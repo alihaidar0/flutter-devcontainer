@@ -103,7 +103,7 @@ Named volumes are initialised from the image only when they are first created. A
 | **Dart SDK** | bundled with Flutter | Language runtime (included in Flutter) |
 | **Java (Eclipse Temurin)** | 21 | Required by Android build toolchain and Gradle |
 | **Node.js** | 24 LTS (Debian 13 `trixie-slim`) | Required by Firebase CLI and FlutterFire CLI |
-| **pnpm** | 12.13.0 (via Corepack) | Package manager for repo-level tooling (Husky, commitlint) in consuming projects |
+| **pnpm** | 12.14.0 (via Corepack) | Package manager for repo-level tooling (Husky, commitlint) in consuming projects |
 
 ### Android
 
@@ -137,7 +137,7 @@ flutter drive --driver=test_driver/integration_test.dart \
 | --- | --- | --- |
 | **Firebase CLI** | 15.33.0 | Firebase project management and deployment |
 | **FlutterFire CLI** | latest | Configure Firebase in Flutter projects |
-| **pnpm** | 12.13.0 | Fast, disk-efficient package manager, activated via Corepack at build time (cached for the `developer` user — no download on first use) |
+| **pnpm** | 12.14.0 | Fast, disk-efficient package manager, activated via Corepack at build time (cached for the `developer` user — no download on first use) |
 | **GitHub CLI** | latest | `gh pr create`, `gh run watch`, `gh auth login` |
 | **openssh-client** | — | `git push` via SSH from inside the container |
 | **Starship** | 1.27.0 | Terminal prompt — git branch and status, Dart and Node versions |
@@ -537,7 +537,7 @@ Firebase CLI is pinned via `ENV FIREBASE_TOOLS_VERSION` in `docker/Dockerfile.de
 
 ```dockerfile
 ENV FIREBASE_TOOLS_VERSION=15.33.0 \
-    PNPM_VERSION=12.13.0 \
+    PNPM_VERSION=12.14.0 \
 ```
 
 firebase-tools is installed into its own prefix (`/opt/firebase-tools`, with `firebase` symlinked into `/usr/local/bin`) instead of with `npm install -g`, because only a local install honours npm `overrides`. `docker/firebase-tools-overrides.json` pins patched versions of transitive dependencies that upstream has not picked up yet (today `basic-ftp` and the `uuid` used by `gaxios`). After a version bump:
@@ -551,7 +551,7 @@ firebase-tools is installed into its own prefix (`/opt/firebase-tools`, with `fi
 pnpm is activated via Corepack and pinned via `ENV PNPM_VERSION` in `docker/Dockerfile.dev`. The image tracks the pnpm 12 line; when a newer major appears, the drift workflow mentions it separately because it needs its own review. Check the latest 12.x version at [npmjs.com/package/pnpm](https://www.npmjs.com/package/pnpm) and update the env:
 
 ```dockerfile
-ENV PNPM_VERSION=12.13.0
+ENV PNPM_VERSION=12.14.0
 ```
 
 > `corepack enable` runs as **root** (it writes shims to the root-owned `/usr/local/bin`), but `corepack prepare pnpm@${PNPM_VERSION} --activate` runs as the non-root `developer` user. Corepack caches the download for the user that runs it, so preparing pnpm as `developer` is what makes `pnpm` work offline for that user. From pnpm 12 the package is only a launcher that downloads its native binary on first use, so the build also runs `pnpm --version` once (as `developer`, with network access) to bake that binary into the cache and to assert the pinned version. CI proves this by resolving pnpm with `COREPACK_ENABLE_NETWORK=0`.
@@ -762,4 +762,4 @@ The rules this setup enforces:
 
 ---
 
-Flutter stable · Dart · Android API 36 · Java 21 Temurin · Node.js 24 LTS · pnpm 12.13.0 · Debian 13 Trixie · 2026
+Flutter stable · Dart · Android API 36 · Java 21 Temurin · Node.js 24 LTS · pnpm 12.14.0 · Debian 13 Trixie · 2026
