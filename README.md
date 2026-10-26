@@ -135,7 +135,7 @@ flutter drive --driver=test_driver/integration_test.dart \
 
 | Tool | Version | Purpose |
 | --- | --- | --- |
-| **Firebase CLI** | 15.33.0 | Firebase project management and deployment |
+| **Firebase CLI** | 15.34.0 | Firebase project management and deployment |
 | **FlutterFire CLI** | latest | Configure Firebase in Flutter projects |
 | **pnpm** | 12.14.0 | Fast, disk-efficient package manager, activated via Corepack at build time (cached for the `developer` user — no download on first use) |
 | **GitHub CLI** | latest | `gh pr create`, `gh run watch`, `gh auth login` |
@@ -536,7 +536,7 @@ Verify the tag exists at [hub.docker.com/_/node/tags](https://hub.docker.com/_/n
 Firebase CLI is pinned via `ENV FIREBASE_TOOLS_VERSION` in `docker/Dockerfile.dev`. Check the latest version at [npmjs.com/package/firebase-tools](https://www.npmjs.com/package/firebase-tools) and update the env:
 
 ```dockerfile
-ENV FIREBASE_TOOLS_VERSION=15.33.0 \
+ENV FIREBASE_TOOLS_VERSION=15.34.0 \
     PNPM_VERSION=12.14.0 \
 ```
 
