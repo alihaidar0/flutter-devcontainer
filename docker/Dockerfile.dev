@@ -29,7 +29,7 @@ ARG NODE_VERSION=24
 # Multi-arch index digest of node:24-trixie-slim. The digest, not the tag,
 # decides what is pulled; the weekly dependency-drift workflow reports when the
 # tag has moved on so the digest can be refreshed deliberately.
-ARG NODE_IMAGE_DIGEST=sha256:8ec5d7557396cfe32d21c3f9c13072355ceab22b584578ca4bb28af31120cffe
+ARG NODE_IMAGE_DIGEST=sha256:0820eaa85e07d0490446dd01d14707e17e6108a36988cf374899cd057eb3812d
 
 FROM node:${NODE_VERSION}-trixie-slim@${NODE_IMAGE_DIGEST}
 
