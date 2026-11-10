@@ -210,6 +210,7 @@ flutter-devcontainer/
 │   │   ├── labels.yml                    ← Syncs labels.yml to GitHub labels
 │   │   ├── pr-labels.yml                 ← Adds labels to a pull request from its Conventional Commit title
 │   │   └── release.yml                   ← Reusable: publishes the GitHub Release named after the image (called by docker.yml)
+│   ├── actionlint.yaml                   ← Actionlint config: the Ubuntu 26.04 runner labels that the pinned release does not know yet
 │   ├── CODE_OF_CONDUCT.md                ← Contributor Covenant 2.1
 │   ├── CODEOWNERS                        ← Auto-requests reviewer on every PR
 │   ├── CONTRIBUTING.md                   ← Branching, commit and change guidelines

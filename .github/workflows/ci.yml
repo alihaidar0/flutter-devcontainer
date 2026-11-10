@@ -25,7 +25,7 @@ jobs:
   verify-source-branch:
     name: Verify source branch
     if: github.event_name == 'pull_request' && github.base_ref == 'main'
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     timeout-minutes: 2
     steps:
       - name: Only develop may target main
@@ -43,7 +43,7 @@ jobs:
   # Decides whether the (expensive) image build has to run for this change.
   changes:
     name: Detect changes
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     timeout-minutes: 5
     outputs:
       image: ${{ steps.filter.outputs.image }}
@@ -72,7 +72,7 @@ jobs:
 
   lint:
     name: Lint
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     timeout-minutes: 10
     steps:
       - name: Checkout
@@ -112,7 +112,7 @@ jobs:
   # Mirrors the rules in .editorconfig that tooling can verify reliably.
   format:
     name: Format
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     timeout-minutes: 5
     steps:
       - name: Checkout
@@ -150,7 +150,7 @@ jobs:
   # pinned versions, the Node major and the alias tables.
   docs-sync:
     name: Docs sync
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     timeout-minutes: 5
     steps:
       - name: Checkout
@@ -174,9 +174,9 @@ jobs:
       matrix:
         include:
           - arch: amd64
-            runner: ubuntu-24.04
+            runner: ubuntu-26.04
           - arch: arm64
-            runner: ubuntu-24.04-arm
+            runner: ubuntu-26.04-arm
     steps:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -230,7 +230,7 @@ jobs:
   # records why they are accepted; lower severities are listed for information.
   npm-audit:
     name: npm audit (firebase-tools)
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     timeout-minutes: 10
     steps:
       - name: Checkout
@@ -294,7 +294,7 @@ jobs:
       - docs-sync
       - build-test
       - npm-audit
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     timeout-minutes: 2
     steps:
       - name: Evaluate results
