@@ -7,6 +7,7 @@ on:
       - main
     paths:
       - "README.md"
+      - ".github/scripts/dockerhub-readme.sh"
       - ".github/workflows/dockerhub-description.yml"
   workflow_dispatch:
 
@@ -28,8 +29,19 @@ jobs:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          sparse-checkout: README.md
+          sparse-checkout: |
+            README.md
+            .github/scripts/dockerhub-readme.sh
+          sparse-checkout-cone-mode: false
           persist-credentials: false
+
+      # Docker Hub keeps at most 25,000 bytes of the description and README.md is
+      # about twice that, so the page used to end mid-sentence. Docker Hub gets the
+      # user-facing sections; the maintainer sections stay on GitHub.
+      - name: Build the Docker Hub description
+        env:
+          OUTPUT: ${{ runner.temp }}/dockerhub-readme.md
+        run: bash .github/scripts/dockerhub-readme.sh "$OUTPUT"
 
       - name: Check image exists on Docker Hub
         id: check
@@ -51,7 +63,7 @@ jobs:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
           repository: ${{ secrets.DOCKERHUB_USERNAME }}/flutter-devcontainer
-          readme-filepath: ./README.md
+          readme-filepath: ${{ runner.temp }}/dockerhub-readme.md
 
       - name: Write job summary
         if: always()

@@ -94,7 +94,7 @@ The image repository is created and configured by hand; the workflows only push 
 3. **Categories:** `Developer tools` and `Languages & frameworks`.
 4. **Access token.** Docker Hub → Account settings → **Personal access tokens** → **Generate new token**, permission **Read, Write & Delete**. Copy it once; it goes into the `docker-hub` environment in section 5. Note the expiry date and renew it before then (see *Build fails — authentication error* in the README's troubleshooting section).
 5. **Do not enable tag retention or inactive-image clean-up** for this repository. Old `flutter-X.Y.Z.R` tags are restore points and must not expire outside the pipeline.
-6. **The README is synced by the pipeline.** The **Docker Hub Description** workflow copies `README.md` to the repository overview on every README change merged to `main`. After creating a new repository, run it once by hand (Actions → **Docker Hub Description** → **Run workflow**, branch `main`).
+6. **The README is synced by the pipeline.** The **Docker Hub Description** workflow copies the user-facing sections of `README.md` (built by `.github/scripts/dockerhub-readme.sh`, because Docker Hub keeps at most 25,000 bytes) to the repository overview on every README change merged to `main`. After creating a new repository, run it once by hand (Actions → **Docker Hub Description** → **Run workflow**, branch `main`).
 
 What the pipeline writes to the repository (all expected):
 
