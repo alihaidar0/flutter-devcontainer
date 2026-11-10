@@ -192,8 +192,11 @@ jobs:
           tags: flutter-devcontainer:ci
           build-args: |
             NODE_VERSION=24
-          cache-from: type=gha,scope=ci-${{ matrix.arch }}
-          cache-to: type=gha,mode=max,scope=ci-${{ matrix.arch }}
+          # No layer cache: a cached layer is not re-run, so `apt-get upgrade`, the
+          # Flutter stable clone and the SDK downloads would keep the releases of the
+          # day the cache was written, and the scan below would fail on fixes that
+          # Debian already ships. Every build starts from the pinned base image.
+          no-cache: true
 
       - name: Smoke test
         run: bash .github/scripts/smoke-test.sh flutter-devcontainer:ci

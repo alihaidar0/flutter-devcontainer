@@ -102,7 +102,7 @@ What the pipeline writes to the repository (all expected):
 | --- | --- |
 | `latest` | The newest image (the only moving tag) |
 | `flutter-X.Y.Z.R` | Permanent name of one image: Flutter release `X.Y.Z`, image revision `R` |
-| `buildcache-amd64`, `buildcache-arm64` | BuildKit layer cache, one per architecture; never pulled |
+| `buildcache-amd64`, `buildcache-arm64` | Old BuildKit layer cache from before builds stopped using a cache; no longer written, safe to delete |
 | `sha256-<digest>.sig` | Cosign signature of an image |
 
 Deleting the **GitHub** repository does not touch Docker Hub: the published images, their tags and their description stay. Deleting the **Docker Hub** repository removes the images, tags, description and categories, and apps pinned to its tags stop working until the next publish (see [Maintenance and recovery](#13-maintenance-and-recovery)).
@@ -279,14 +279,14 @@ Promotion: open a PR `develop` → `main` (for example `https://github.com/aliha
 
 ## 13. Maintenance and recovery
 
-**Publishing by hand.** Actions → **Docker** → **Run workflow**, branch **`main`** (the dropdown defaults to `develop`, which the environment refuses). `push_image` = `false` is a dry run that builds and smoke-tests both architectures without publishing. Tick *Bypass layer cache* to force a fresh Flutter clone. A manual publish takes the next free `flutter-X.Y.Z.R`; a release is created only when it is the first image of a new Flutter release.
+**Publishing by hand.** Actions → **Docker** → **Run workflow**, branch **`main`** (the dropdown defaults to `develop`, which the environment refuses). `push_image` = `false` is a dry run that builds and smoke-tests both architectures without publishing. Every build is a full build without a layer cache, so it always takes the newest Flutter stable and Debian packages. A manual publish takes the next free `flutter-X.Y.Z.R`; a release is created only when it is the first image of a new Flutter release.
 
 **Rolling back `latest`.** See [Rolling back `latest`](../README.md#rolling-back-latest). No rebuild is needed.
 
 **Starting over on Docker Hub (wipe every image).** Only if you accept that every project pinned to an existing tag breaks until the next publish:
 
 1. In Docker Hub, delete all tags of the repository (not the repository itself, which would also remove its description and categories).
-2. Run the publish: merge an image change `develop` → `main`, or run **Docker** by hand on `main`. The image is built cold (about 15 to 25 minutes, because the `buildcache-*` tags are gone too).
+2. Run the publish: merge an image change `develop` → `main`, or run **Docker** by hand on `main`. The image is built from scratch (about 15 to 25 minutes, like every build).
 3. Run **Docker Hub Description** once to keep the overview in sync.
 
 You do not need to delete the GitHub releases or git tags, and deleting them would not help. With release immutability on, GitHub keeps every tag name that a published release used reserved for good, so those revision numbers can never be used again. The `reserve-tag` job takes the first revision that is free on Docker Hub **and** creatable on GitHub, so after a wipe the first new image is the next number above the highest one ever released (for example `flutter-3.47.6.3` rather than `.1`), and the numbering simply continues.

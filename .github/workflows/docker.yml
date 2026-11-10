@@ -31,11 +31,6 @@ on:
         options:
           - "true"
           - "false"
-      force_rebuild:
-        description: "Bypass layer cache (full rebuild)"
-        required: false
-        type: boolean
-        default: false
 
 concurrency:
   group: docker-${{ github.ref }}
@@ -90,11 +85,12 @@ jobs:
         with:
           images: ${{ env.IMAGE_NAME }}
 
-      # The registry cache keeps the (very large) layers out of the 10 GB
-      # GitHub Actions cache, which the pull-request builds already use.
-      # A forced rebuild imports no cache at all; the push step below still
-      # reuses what this step just built, because BuildKit keeps its cache for
-      # the whole job.
+      # No layer cache: a cached layer is not re-run, so `apt-get upgrade`, the
+      # Flutter stable clone and the SDK downloads would keep the releases of the
+      # day the cache was written, and the published image would miss fixes that
+      # are already available. Every publish starts from the pinned base image.
+      # The push step below reuses what this step just built (BuildKit keeps its
+      # results for the whole job), so the image that is pushed is the one tested.
       - name: Build image for testing
         uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
         with:
@@ -106,7 +102,7 @@ jobs:
           tags: flutter-devcontainer:test
           build-args: |
             NODE_VERSION=24
-          cache-from: ${{ inputs.force_rebuild != true && format('type=registry,ref={0}:buildcache-{1}', env.IMAGE_NAME, matrix.arch) || '' }}
+          no-cache: true
 
       - name: Smoke test
         run: bash .github/scripts/smoke-test.sh flutter-devcontainer:test
@@ -148,8 +144,6 @@ jobs:
           labels: ${{ steps.meta.outputs.labels }}
           build-args: |
             NODE_VERSION=24
-          cache-from: ${{ inputs.force_rebuild != true && format('type=registry,ref={0}:buildcache-{1}', env.IMAGE_NAME, matrix.arch) || '' }}
-          cache-to: type=registry,ref=${{ env.IMAGE_NAME }}:buildcache-${{ matrix.arch }},mode=max,image-manifest=true,oci-mediatypes=true
           outputs: type=image,name=${{ env.IMAGE_NAME }},push-by-digest=true,name-canonical=true,push=true
           provenance: mode=max
           sbom: true
