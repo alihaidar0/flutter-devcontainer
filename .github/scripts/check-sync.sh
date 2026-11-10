@@ -7,7 +7,9 @@
 #    * the Node major differs between the Dockerfile, ci.yml and docker.yml,
 #    * an alias defined in scripts/shell_setup.sh is missing from the README
 #      "Shell Aliases" tables, or the README documents an alias that no longer
-#      exists.
+#      exists,
+#    * the part of README.md synced to Docker Hub (.github/scripts/dockerhub-readme.sh)
+#      would no longer fit Docker Hub's 25,000-byte limit.
 #
 #  Run from anywhere inside the repository.
 # =============================================================
@@ -87,6 +89,11 @@ while IFS= read -r name; do
   grep -qxF -- "${name}" <<< "${script_aliases}" \
     || fail "Alias '${name}' is documented in the README but not defined in ${aliases_script}."
 done <<< "${readme_aliases}"
+
+# ── Docker Hub page ─────────────────────────────────────────
+if ! bash .github/scripts/dockerhub-readme.sh > /dev/null; then
+  fail "The Docker Hub part of README.md is too large (see the error above)."
+fi
 
 if [ "${status}" -eq 0 ]; then
   echo "README and implementation are in sync."

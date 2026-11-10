@@ -198,6 +198,7 @@ flutter-devcontainer/
 │   │   ├── audit_gate.py                 ← CI: fails on high/critical npm advisories that are not allowlisted
 │   │   ├── check-sync.sh                 ← CI: README versions/aliases must match the implementation
 │   │   ├── check_drift.py                ← Compares pinned versions with upstream (used by dependency-drift.yml)
+│   │   ├── dockerhub-readme.sh           ← Builds the user-facing part of README.md that goes to Docker Hub (≤ 25,000 bytes)
 │   │   ├── reserve-tag.sh                ← Picks the next free image revision and reserves its git tag (used by docker.yml)
 │   │   ├── smoke-test.sh                 ← Toolchain smoke test shared by ci.yml and docker.yml
 │   │   └── test-reserve-tag.sh           ← CI: tests reserve-tag.sh with stubbed curl and gh
@@ -205,7 +206,7 @@ flutter-devcontainer/
 │   │   ├── ci.yml                        ← PR validation: lint, format, docs sync, build + smoke test + scan, npm audit → "CI passed"
 │   │   ├── dependency-drift.yml          ← Weekly: reports pinned tool versions that are behind upstream
 │   │   ├── docker.yml                    ← Builds natively per arch, tests, pushes, signs (push to main when the image changes, or manual)
-│   │   ├── dockerhub-description.yml     ← Syncs README.md to Docker Hub on push to main
+│   │   ├── dockerhub-description.yml     ← Syncs the user-facing part of README.md to Docker Hub on push to main
 │   │   ├── labels.yml                    ← Syncs labels.yml to GitHub labels
 │   │   ├── pr-labels.yml                 ← Adds labels to a pull request from its Conventional Commit title
 │   │   └── release.yml                   ← Reusable: publishes the GitHub Release named after the image (called by docker.yml)
@@ -232,7 +233,7 @@ flutter-devcontainer/
 ├── .gitignore                            ← Ensures secrets are never committed
 ├── .hadolint.yaml                        ← Dockerfile lint rules used by CI
 ├── LICENSE                               ← MIT — free to use, your name stays on it
-├── README.md                             ← This file — also synced to Docker Hub
+├── README.md                             ← This file — its user-facing sections are synced to Docker Hub
 ├── SECURITY.md                           ← Vulnerability reporting policy
 └── repomix.config.json                   ← Repomix config for generating a single-file repository snapshot
 ```
@@ -250,7 +251,7 @@ flutter-devcontainer/
 | `workflows/docker.yml` | Push to `main` (`docker/`, `scripts/`, `.dockerignore` or `docker.yml` changed) | Builds each architecture natively, smoke-tests, pushes `:latest` and a permanent `:flutter-X.Y.Z.R` tag, and signs the image |
 | `workflows/docker.yml` | Manual dispatch (from `main`) | Same pipeline, with a push toggle |
 | `workflows/dependency-drift.yml` | Every Monday 05:47 UTC / manual | Opens, updates or closes one issue listing pinned tool versions that are behind upstream |
-| `workflows/dockerhub-description.yml` | Push to `main` (`README.md` changed) | Updates Docker Hub description |
+| `workflows/dockerhub-description.yml` | Push to `main` (`README.md` changed) | Updates the Docker Hub description with the user-facing sections of the README |
 | `workflows/dockerhub-description.yml` | Manual dispatch (from `main`) | Forces immediate Docker Hub sync |
 | `workflows/release.yml` | Called by `docker.yml` after a publish from `main` | Publishes a GitHub Release named after the image (`flutter-X.Y.Z.R`) with generated notes |
 | `workflows/labels.yml` | Push to `main` (`.github/labels.yml` changed) | Syncs all labels to GitHub |
@@ -287,7 +288,7 @@ Dependabot cannot see the tools pinned in `Dockerfile.dev`, so this workflow com
 
 ### `workflows/dockerhub-description.yml`
 
-Syncs `README.md` to the Docker Hub repository description page on every `README.md` change merged to `main`.
+Syncs the user-facing sections of `README.md` to the Docker Hub repository description page on every `README.md` change merged to `main`. Docker Hub keeps at most 25,000 bytes and the README is about twice that, so `.github/scripts/dockerhub-readme.sh` leaves out the maintainer sections (repository structure, automation, updating the image, repository setup, contributing), turns links to README headings into absolute GitHub links, and ends with a link to the full README. The **Docs sync** check fails a pull request that would push the Docker Hub part over the limit.
 
 ### `workflows/release.yml`
 
