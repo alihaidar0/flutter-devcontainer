@@ -148,7 +148,7 @@ Every workflow also declares its own `permissions:` block (default `contents: re
 
 If you add a workflow that uses a new third-party action, add it to the allowed list above and pin it to a full commit SHA, otherwise the run is refused.
 
-Workflows run on an explicit runner image (`ubuntu-24.04`, and `ubuntu-24.04-arm` for arm64) rather than `ubuntu-latest`. GitHub moves `ubuntu-latest` to a new Ubuntu release on its own schedule, which changes the toolchain under every job at once and shows up as a warning on each run. Moving to a newer image is a deliberate edit of the `runs-on:` lines (and the matrix runner entries) once the build has been verified on it.
+Workflows run on an explicit runner image (`ubuntu-26.04`, and `ubuntu-26.04-arm` for arm64) rather than `ubuntu-latest`. GitHub moves `ubuntu-latest` to a new Ubuntu release on its own schedule, which changes the toolchain under every job at once and shows up as a warning on each run. Moving to a newer image is a deliberate edit of the `runs-on:` lines (and the matrix runner entries) once the build has been verified on it. The pinned actionlint does not know the Ubuntu 26.04 labels yet, so `.github/actionlint.yaml` lists them; remove that file once the pinned release knows them.
 
 ## 5. Environment and secrets
 

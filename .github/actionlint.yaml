@@ -1,0 +1,10 @@
+# actionlint configuration, picked up automatically by the Lint job in ci.yml.
+#
+# The workflows run on the Ubuntu 26.04 hosted runners. The pinned actionlint
+# (see the `version:` input of the Actionlint step in ci.yml) does not list those
+# labels yet, so it reports them as unknown. Remove this file once the pinned
+# release knows them.
+self-hosted-runner:
+  labels:
+    - ubuntu-26.04
+    - ubuntu-26.04-arm
