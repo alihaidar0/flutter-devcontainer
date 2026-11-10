@@ -249,7 +249,7 @@ flutter-devcontainer/
 | `workflows/ci.yml` | Manual dispatch | Same checks on the selected branch |
 | `workflows/docker.yml` | Push to `main` (`docker/`, `scripts/`, `.dockerignore` or `docker.yml` changed) | Builds each architecture natively, smoke-tests, pushes `:latest` and a permanent `:flutter-X.Y.Z.R` tag, and signs the image |
 | `workflows/docker.yml` | Manual dispatch (from `main`) | Same pipeline, with a push toggle |
-| `workflows/dependency-drift.yml` | Every Monday 06:00 UTC / manual | Opens, updates or closes one issue listing pinned tool versions that are behind upstream |
+| `workflows/dependency-drift.yml` | Every Monday 05:47 UTC / manual | Opens, updates or closes one issue listing pinned tool versions that are behind upstream |
 | `workflows/dockerhub-description.yml` | Push to `main` (`README.md` changed) | Updates Docker Hub description |
 | `workflows/dockerhub-description.yml` | Manual dispatch (from `main`) | Forces immediate Docker Hub sync |
 | `workflows/release.yml` | Called by `docker.yml` after a publish from `main` | Publishes a GitHub Release named after the image (`flutter-X.Y.Z.R`) with generated notes |
@@ -266,7 +266,7 @@ Every third-party action is pinned to a full commit SHA (with a `# vX.Y.Z` comme
 Runs on every pull request into `develop` or `main`:
 
 - **Verify source branch** — a PR into `main` must come from `develop` of this repository.
-- **Lint** — Hadolint (`.hadolint.yaml`), ShellCheck, a syntax check of the Python helper, and actionlint.
+- **Lint** — Hadolint (`.hadolint.yaml`), ShellCheck, a syntax check of the Python helper, and actionlint (its version is pinned, so a new release cannot fail Lint unannounced; the drift issue reports newer ones).
 - **Format** — LF line endings, no trailing whitespace, final newline (the rules in `.editorconfig` that tooling can check reliably).
 - **Docs sync** — `.github/scripts/check-sync.sh` fails when `README.md` and the implementation disagree: a version pinned in `Dockerfile.dev` that the README does not mention, a Node major that differs between the Dockerfile and the workflows, or an alias missing from (or extra in) the README tables.
 - **Build & test** — builds the image natively on `linux/amd64` and `linux/arm64` (no push) and runs `.github/scripts/smoke-test.sh`: Firebase CLI, pnpm and Starship versions against the pins in `Dockerfile.dev` (pnpm is resolved with the network disabled, proving the build-time cache works), the container user (UID/GID 1000, passwordless `sudo`), writable cache directories, Git's trust of `/workspace`, Node 24, Android platform, Chrome/Chromium, `flutter doctor`, the shell aliases and the Dev Container metadata label. The build uses no layer cache, so it contains the packages available today. On `amd64` the image is then scanned with Grype; a **critical** vulnerability that already has a fix fails the check, unless `.github/grype.yaml` records why it is accepted (only for components that cannot be fixed from this repository, such as the Bouncy Castle library bundled inside Google's Android command-line tools; each entry names the exact version it covers, so it lapses when that component changes). Skipped when a PR touches neither `docker/`, `scripts/`, the smoke test nor the CI configuration.
@@ -283,7 +283,7 @@ The push trigger is path-filtered (`docker/`, `scripts/`, `.dockerignore` and th
 
 ### `workflows/dependency-drift.yml`
 
-Dependabot cannot see the tools pinned in `Dockerfile.dev`, so this workflow compares them with their official release channels every Monday and keeps **one** issue up to date. It covers firebase-tools, pnpm (within its pinned major line — a newer major is noted separately), Starship, the Android cmdline-tools build, the digest of the `node` base image, and every advisory accepted in `.github/npm-audit-allowlist.txt` (reported as soon as a patched release exists). The issue closes itself when every pin is current. Renovate normally opens the PR for firebase-tools, pnpm and the node digest; the issue is the safety net for those and the only prompt for Starship and the cmdline-tools build, whose downloads are checksum-verified and so need a deliberate bump. Bump what it lists as described in [Updating the Image](#updating-the-image).
+Dependabot cannot see the tools pinned in `Dockerfile.dev`, so this workflow compares them with their official release channels every Monday and keeps **one** issue up to date. It covers firebase-tools, pnpm (within its pinned major line — a newer major is noted separately), Starship, the Android cmdline-tools build, the digest of the `node` base image, the actionlint version pinned in `ci.yml`, and every advisory accepted in `.github/npm-audit-allowlist.txt` (reported as soon as a patched release exists). The issue closes itself when every pin is current. Renovate normally opens the PR for firebase-tools, pnpm and the node digest; the issue is the safety net for those and the only prompt for Starship and the cmdline-tools build, whose downloads are checksum-verified and so need a deliberate bump. Bump what it lists as described in [Updating the Image](#updating-the-image).
 
 ### `workflows/dockerhub-description.yml`
 

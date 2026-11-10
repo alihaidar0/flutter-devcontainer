@@ -9,6 +9,7 @@ Sources (all official release channels):
   Starship                GitHub releases API
   Android cmdline-tools   developer.android.com/studio (the documented download page)
   node base image         Docker Hub registry (digest of the pinned tag)
+  actionlint              GitHub releases API (the version pinned in .github/workflows/ci.yml)
 
 pnpm is compared inside its pinned major line; a newer major is listed
 separately because it needs a deliberate migration. Node is frozen on purpose
@@ -27,6 +28,9 @@ import urllib.error
 import urllib.request
 
 DOCKERFILE = "docker/Dockerfile.dev"
+CI_WORKFLOW = ".github/workflows/ci.yml"
+# The `version:` input of the actionlint step (comment lines may sit in between).
+ACTIONLINT_PIN = r"uses: raven-actions/actionlint@[^\n]*\n(?:[ \t]+(?:#[^\n]*|with:)\n)*[ \t]+version: (\d+\.\d+\.\d+)"
 IMAGE = "alihaidar199527/flutter-devcontainer"
 ALLOWLIST = ".github/npm-audit-allowlist.txt"
 TIMEOUT = 30
@@ -112,6 +116,10 @@ def latest_starship():
     return fetch_json("https://api.github.com/repos/starship/starship/releases/latest")["tag_name"].lstrip("v")
 
 
+def latest_actionlint():
+    return fetch_json("https://api.github.com/repos/rhysd/actionlint/releases/latest")["tag_name"].lstrip("v")
+
+
 def latest_cmdline_build():
     with fetch("https://developer.android.com/studio") as response:
         html = response.read().decode("utf-8", "ignore")
@@ -189,6 +197,12 @@ def main():
             )
 
     record("Starship", pin(dockerfile, "STARSHIP_VERSION"), latest_starship)
+
+    with open(CI_WORKFLOW, encoding="utf-8") as handle:
+        actionlint = re.search(ACTIONLINT_PIN, handle.read())
+    if not actionlint:
+        sys.exit(f"Could not read the actionlint version pinned in {CI_WORKFLOW}")
+    record("actionlint (ci.yml)", actionlint.group(1), latest_actionlint)
     record("Android cmdline-tools build", pin(dockerfile, "CMDLINE_TOOLS_BUILD"), latest_cmdline_build)
 
     # The Debian variant (for example "trixie-slim") is read from the FROM line.
