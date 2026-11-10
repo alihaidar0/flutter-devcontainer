@@ -43,8 +43,10 @@ docker run --rm \
     test "$(id -u)" = "1000"
     test "$(id -g)" = "1000"
     test "${HOME}" = "/home/developer"
-    # The base image account was renamed, not duplicated.
-    ! getent passwd node > /dev/null
+    # The base image account was renamed, not duplicated. (A negated command such
+    # as `! getent …` never stops a `set -e` script, so negative checks are an
+    # explicit if.)
+    if getent passwd node > /dev/null; then echo "the node user still exists" >&2; exit 1; fi
     # Consuming projects run `sudo` non-interactively (chown, apt).
     sudo -n true
 
@@ -96,7 +98,10 @@ docker run --rm \
     genhtml --version
     less --version | head -1
     # Desktop platforms are switched off, so `flutter doctor` must not mention them.
-    ! flutter doctor -v 2>&1 | grep -E "Linux toolchain|Windows Version|Xcode" > /dev/null
+    if flutter doctor -v 2>&1 | grep -E "Linux toolchain|Windows Version|Xcode" > /dev/null; then
+      echo "flutter doctor still lists a desktop toolchain" >&2
+      exit 1
+    fi
     flutter doctor
   '
 echo "::endgroup::"
