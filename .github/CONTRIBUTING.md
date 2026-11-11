@@ -54,7 +54,14 @@ docker run --rm -v "$PWD:/repo" -w /repo rhysd/actionlint:latest -no-color
 docker run --rm -v "$PWD:/mnt" -w /mnt koalaman/shellcheck:stable $(git ls-files '*.sh')
 ```
 
-A cold image build takes about 15–20 minutes. CI runs the same checks, builds both architectures natively and scans the image.
+A cold image build takes about 15–20 minutes. CI runs the same checks, builds both architectures natively without a layer cache
+and scans the image.
+
+**When the vulnerability scan fails:** read the package and its fixed version in the job log and re-run the job once
+(every build is fresh, so a fix published since is picked up). A Debian package (Chromium included) whose fix is not on
+the mirrors yet clears on a later run; a pinned tool (firebase-tools, pnpm, Starship, the cmdline-tools build) needs a
+newer pin; add a `.github/grype.yaml` entry only for a component that cannot be fixed from this repository, with its
+reason and exact version. Never lower the gate (`severity-cutoff`, `fail-build`) to get a green run.
 
 ## Security issues
 

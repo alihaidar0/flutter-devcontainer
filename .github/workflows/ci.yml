@@ -25,7 +25,7 @@ jobs:
   verify-source-branch:
     name: Verify source branch
     if: github.event_name == 'pull_request' && github.base_ref == 'main'
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     timeout-minutes: 2
     steps:
       - name: Only develop may target main
@@ -43,7 +43,7 @@ jobs:
   # Decides whether the (expensive) image build has to run for this change.
   changes:
     name: Detect changes
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     timeout-minutes: 5
     outputs:
       image: ${{ steps.filter.outputs.image }}
@@ -72,7 +72,7 @@ jobs:
 
   lint:
     name: Lint
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     timeout-minutes: 10
     steps:
       - name: Checkout
@@ -103,11 +103,16 @@ jobs:
 
       - name: Actionlint (workflows)
         uses: raven-actions/actionlint@3d39aea434753780c3b3d4a1a31c854b4dbf49d7 # v2.2.0
+        with:
+          # Pinned: the action defaults to the newest actionlint, which can fail Lint
+          # on a day nothing here changed. dependency-drift.yml reports newer
+          # releases in its weekly issue; bump this line in a pull request.
+          version: 1.7.12
 
   # Mirrors the rules in .editorconfig that tooling can verify reliably.
   format:
     name: Format
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     timeout-minutes: 5
     steps:
       - name: Checkout
@@ -145,7 +150,7 @@ jobs:
   # pinned versions, the Node major and the alias tables.
   docs-sync:
     name: Docs sync
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     timeout-minutes: 5
     steps:
       - name: Checkout
@@ -169,9 +174,9 @@ jobs:
       matrix:
         include:
           - arch: amd64
-            runner: ubuntu-24.04
+            runner: ubuntu-26.04
           - arch: arm64
-            runner: ubuntu-24.04-arm
+            runner: ubuntu-26.04-arm
     steps:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -192,8 +197,11 @@ jobs:
           tags: flutter-devcontainer:ci
           build-args: |
             NODE_VERSION=24
-          cache-from: type=gha,scope=ci-${{ matrix.arch }}
-          cache-to: type=gha,mode=max,scope=ci-${{ matrix.arch }}
+          # No layer cache: a cached layer is not re-run, so `apt-get upgrade`, the
+          # Flutter stable clone and the SDK downloads would keep the releases of the
+          # day the cache was written, and the scan below would fail on fixes that
+          # Debian already ships. Every build starts from the pinned base image.
+          no-cache: true
 
       - name: Smoke test
         run: bash .github/scripts/smoke-test.sh flutter-devcontainer:ci
@@ -222,7 +230,7 @@ jobs:
   # records why they are accepted; lower severities are listed for information.
   npm-audit:
     name: npm audit (firebase-tools)
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     timeout-minutes: 10
     steps:
       - name: Checkout
@@ -286,7 +294,7 @@ jobs:
       - docs-sync
       - build-test
       - npm-audit
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     timeout-minutes: 2
     steps:
       - name: Evaluate results

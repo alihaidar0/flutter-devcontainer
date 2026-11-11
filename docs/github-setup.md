@@ -94,7 +94,7 @@ The image repository is created and configured by hand; the workflows only push 
 3. **Categories:** `Developer tools` and `Languages & frameworks`.
 4. **Access token.** Docker Hub → Account settings → **Personal access tokens** → **Generate new token**, permission **Read, Write & Delete**. Copy it once; it goes into the `docker-hub` environment in section 5. Note the expiry date and renew it before then (see *Build fails — authentication error* in the README's troubleshooting section).
 5. **Do not enable tag retention or inactive-image clean-up** for this repository. Old `flutter-X.Y.Z.R` tags are restore points and must not expire outside the pipeline.
-6. **The README is synced by the pipeline.** The **Docker Hub Description** workflow copies `README.md` to the repository overview on every README change merged to `main`. After creating a new repository, run it once by hand (Actions → **Docker Hub Description** → **Run workflow**, branch `main`).
+6. **The README is synced by the pipeline.** The **Docker Hub Description** workflow copies the user-facing sections of `README.md` (built by `.github/scripts/dockerhub-readme.sh`, because Docker Hub keeps at most 25,000 bytes) to the repository overview on every README change merged to `main`. After creating a new repository, run it once by hand (Actions → **Docker Hub Description** → **Run workflow**, branch `main`).
 
 What the pipeline writes to the repository (all expected):
 
@@ -102,7 +102,7 @@ What the pipeline writes to the repository (all expected):
 | --- | --- |
 | `latest` | The newest image (the only moving tag) |
 | `flutter-X.Y.Z.R` | Permanent name of one image: Flutter release `X.Y.Z`, image revision `R` |
-| `buildcache-amd64`, `buildcache-arm64` | BuildKit layer cache, one per architecture; never pulled |
+| `buildcache-amd64`, `buildcache-arm64` | Old BuildKit layer cache from before builds stopped using a cache; no longer written, safe to delete |
 | `sha256-<digest>.sig` | Cosign signature of an image |
 
 Deleting the **GitHub** repository does not touch Docker Hub: the published images, their tags and their description stay. Deleting the **Docker Hub** repository removes the images, tags, description and categories, and apps pinned to its tags stop working until the next publish (see [Maintenance and recovery](#13-maintenance-and-recovery)).
@@ -148,7 +148,7 @@ Every workflow also declares its own `permissions:` block (default `contents: re
 
 If you add a workflow that uses a new third-party action, add it to the allowed list above and pin it to a full commit SHA, otherwise the run is refused.
 
-Workflows run on an explicit runner image (`ubuntu-24.04`, and `ubuntu-24.04-arm` for arm64) rather than `ubuntu-latest`. GitHub moves `ubuntu-latest` to a new Ubuntu release on its own schedule, which changes the toolchain under every job at once and shows up as a warning on each run. Moving to a newer image is a deliberate edit of the `runs-on:` lines (and the matrix runner entries) once the build has been verified on it.
+Workflows run on an explicit runner image (`ubuntu-26.04`, and `ubuntu-26.04-arm` for arm64) rather than `ubuntu-latest`. GitHub moves `ubuntu-latest` to a new Ubuntu release on its own schedule, which changes the toolchain under every job at once and shows up as a warning on each run. Moving to a newer image is a deliberate edit of the `runs-on:` lines (and the matrix runner entries) once the build has been verified on it. The pinned actionlint does not know the Ubuntu 26.04 labels yet, so `.github/actionlint.yaml` lists them; remove that file once the pinned release knows them.
 
 ## 5. Environment and secrets
 
@@ -279,14 +279,14 @@ Promotion: open a PR `develop` → `main` (for example `https://github.com/aliha
 
 ## 13. Maintenance and recovery
 
-**Publishing by hand.** Actions → **Docker** → **Run workflow**, branch **`main`** (the dropdown defaults to `develop`, which the environment refuses). `push_image` = `false` is a dry run that builds and smoke-tests both architectures without publishing. Tick *Bypass layer cache* to force a fresh Flutter clone. A manual publish takes the next free `flutter-X.Y.Z.R`; a release is created only when it is the first image of a new Flutter release.
+**Publishing by hand.** Actions → **Docker** → **Run workflow**, branch **`main`** (the dropdown defaults to `develop`, which the environment refuses). `push_image` = `false` is a dry run that builds and smoke-tests both architectures without publishing. Every build is a full build without a layer cache, so it always takes the newest Flutter stable and Debian packages. A manual publish takes the next free `flutter-X.Y.Z.R`; a release is created only when it is the first image of a new Flutter release.
 
 **Rolling back `latest`.** See [Rolling back `latest`](../README.md#rolling-back-latest). No rebuild is needed.
 
 **Starting over on Docker Hub (wipe every image).** Only if you accept that every project pinned to an existing tag breaks until the next publish:
 
 1. In Docker Hub, delete all tags of the repository (not the repository itself, which would also remove its description and categories).
-2. Run the publish: merge an image change `develop` → `main`, or run **Docker** by hand on `main`. The image is built cold (about 15 to 25 minutes, because the `buildcache-*` tags are gone too).
+2. Run the publish: merge an image change `develop` → `main`, or run **Docker** by hand on `main`. The image is built from scratch (about 15 to 25 minutes, like every build).
 3. Run **Docker Hub Description** once to keep the overview in sync.
 
 You do not need to delete the GitHub releases or git tags, and deleting them would not help. With release immutability on, GitHub keeps every tag name that a published release used reserved for good, so those revision numbers can never be used again. The `reserve-tag` job takes the first revision that is free on Docker Hub **and** creatable on GitHub, so after a wipe the first new image is the next number above the highest one ever released (for example `flutter-3.47.6.3` rather than `.1`), and the numbering simply continues.

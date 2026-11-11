@@ -103,7 +103,7 @@ Named volumes are initialised from the image only when they are first created. A
 | **Dart SDK** | bundled with Flutter | Language runtime (included in Flutter) |
 | **Java (Eclipse Temurin)** | 21 | Required by Android build toolchain and Gradle |
 | **Node.js** | 24 LTS (Debian 13 `trixie-slim`) | Required by Firebase CLI and FlutterFire CLI |
-| **pnpm** | 12.14.0 (via Corepack) | Package manager for repo-level tooling (Husky, commitlint) in consuming projects |
+| **pnpm** | 12.18.0 (via Corepack) | Package manager for repo-level tooling (Husky, commitlint) in consuming projects |
 
 ### Android
 
@@ -135,9 +135,9 @@ flutter drive --driver=test_driver/integration_test.dart \
 
 | Tool | Version | Purpose |
 | --- | --- | --- |
-| **Firebase CLI** | 15.34.0 | Firebase project management and deployment |
+| **Firebase CLI** | 15.35.0 | Firebase project management and deployment |
 | **FlutterFire CLI** | latest | Configure Firebase in Flutter projects |
-| **pnpm** | 12.14.0 | Fast, disk-efficient package manager, activated via Corepack at build time (cached for the `developer` user — no download on first use) |
+| **pnpm** | 12.18.0 | Fast, disk-efficient package manager, activated via Corepack at build time (cached for the `developer` user — no download on first use) |
 | **GitHub CLI** | latest | `gh pr create`, `gh run watch`, `gh auth login` |
 | **openssh-client** | — | `git push` via SSH from inside the container |
 | **Starship** | 1.27.0 | Terminal prompt — git branch and status, Dart and Node versions |
@@ -198,6 +198,7 @@ flutter-devcontainer/
 │   │   ├── audit_gate.py                 ← CI: fails on high/critical npm advisories that are not allowlisted
 │   │   ├── check-sync.sh                 ← CI: README versions/aliases must match the implementation
 │   │   ├── check_drift.py                ← Compares pinned versions with upstream (used by dependency-drift.yml)
+│   │   ├── dockerhub-readme.sh           ← Builds the user-facing part of README.md that goes to Docker Hub (≤ 25,000 bytes)
 │   │   ├── reserve-tag.sh                ← Picks the next free image revision and reserves its git tag (used by docker.yml)
 │   │   ├── smoke-test.sh                 ← Toolchain smoke test shared by ci.yml and docker.yml
 │   │   └── test-reserve-tag.sh           ← CI: tests reserve-tag.sh with stubbed curl and gh
@@ -205,10 +206,11 @@ flutter-devcontainer/
 │   │   ├── ci.yml                        ← PR validation: lint, format, docs sync, build + smoke test + scan, npm audit → "CI passed"
 │   │   ├── dependency-drift.yml          ← Weekly: reports pinned tool versions that are behind upstream
 │   │   ├── docker.yml                    ← Builds natively per arch, tests, pushes, signs (push to main when the image changes, or manual)
-│   │   ├── dockerhub-description.yml     ← Syncs README.md to Docker Hub on push to main
+│   │   ├── dockerhub-description.yml     ← Syncs the user-facing part of README.md to Docker Hub on push to main
 │   │   ├── labels.yml                    ← Syncs labels.yml to GitHub labels
 │   │   ├── pr-labels.yml                 ← Adds labels to a pull request from its Conventional Commit title
 │   │   └── release.yml                   ← Reusable: publishes the GitHub Release named after the image (called by docker.yml)
+│   ├── actionlint.yaml                   ← Actionlint config: the Ubuntu 26.04 runner labels that the pinned release does not know yet
 │   ├── CODE_OF_CONDUCT.md                ← Contributor Covenant 2.1
 │   ├── CODEOWNERS                        ← Auto-requests reviewer on every PR
 │   ├── CONTRIBUTING.md                   ← Branching, commit and change guidelines
@@ -232,7 +234,7 @@ flutter-devcontainer/
 ├── .gitignore                            ← Ensures secrets are never committed
 ├── .hadolint.yaml                        ← Dockerfile lint rules used by CI
 ├── LICENSE                               ← MIT — free to use, your name stays on it
-├── README.md                             ← This file — also synced to Docker Hub
+├── README.md                             ← This file — its user-facing sections are synced to Docker Hub
 ├── SECURITY.md                           ← Vulnerability reporting policy
 └── repomix.config.json                   ← Repomix config for generating a single-file repository snapshot
 ```
@@ -248,9 +250,9 @@ flutter-devcontainer/
 | `workflows/ci.yml` | PR targeting `develop` or `main` | Lint, format, docs sync, build + smoke test + vulnerability scan (`amd64` + `arm64`), `npm audit`, then the aggregate **CI passed** check |
 | `workflows/ci.yml` | Manual dispatch | Same checks on the selected branch |
 | `workflows/docker.yml` | Push to `main` (`docker/`, `scripts/`, `.dockerignore` or `docker.yml` changed) | Builds each architecture natively, smoke-tests, pushes `:latest` and a permanent `:flutter-X.Y.Z.R` tag, and signs the image |
-| `workflows/docker.yml` | Manual dispatch (from `main`) | Same pipeline, with force-rebuild and push toggle |
-| `workflows/dependency-drift.yml` | Every Monday 06:00 UTC / manual | Opens, updates or closes one issue listing pinned tool versions that are behind upstream |
-| `workflows/dockerhub-description.yml` | Push to `main` (`README.md` changed) | Updates Docker Hub description |
+| `workflows/docker.yml` | Manual dispatch (from `main`) | Same pipeline, with a push toggle |
+| `workflows/dependency-drift.yml` | Every Monday 05:47 UTC / manual | Opens, updates or closes one issue listing pinned tool versions that are behind upstream |
+| `workflows/dockerhub-description.yml` | Push to `main` (`README.md` changed) | Updates the Docker Hub description with the user-facing sections of the README |
 | `workflows/dockerhub-description.yml` | Manual dispatch (from `main`) | Forces immediate Docker Hub sync |
 | `workflows/release.yml` | Called by `docker.yml` after a publish from `main` | Publishes a GitHub Release named after the image (`flutter-X.Y.Z.R`) with generated notes |
 | `workflows/labels.yml` | Push to `main` (`.github/labels.yml` changed) | Syncs all labels to GitHub |
@@ -266,16 +268,16 @@ Every third-party action is pinned to a full commit SHA (with a `# vX.Y.Z` comme
 Runs on every pull request into `develop` or `main`:
 
 - **Verify source branch** — a PR into `main` must come from `develop` of this repository.
-- **Lint** — Hadolint (`.hadolint.yaml`), ShellCheck, a syntax check of the Python helper, and actionlint.
+- **Lint** — Hadolint (`.hadolint.yaml`), ShellCheck, a syntax check of the Python helper, and actionlint (its version is pinned, so a new release cannot fail Lint unannounced; the drift issue reports newer ones).
 - **Format** — LF line endings, no trailing whitespace, final newline (the rules in `.editorconfig` that tooling can check reliably).
 - **Docs sync** — `.github/scripts/check-sync.sh` fails when `README.md` and the implementation disagree: a version pinned in `Dockerfile.dev` that the README does not mention, a Node major that differs between the Dockerfile and the workflows, or an alias missing from (or extra in) the README tables.
-- **Build & test** — builds the image natively on `linux/amd64` and `linux/arm64` (no push) and runs `.github/scripts/smoke-test.sh`: Firebase CLI, pnpm and Starship versions against the pins in `Dockerfile.dev` (pnpm is resolved with the network disabled, proving the build-time cache works), the container user (UID/GID 1000, passwordless `sudo`), writable cache directories, Git's trust of `/workspace`, Node 24, Android platform, Chrome/Chromium, `flutter doctor`, the shell aliases and the Dev Container metadata label. On `amd64` the image is then scanned with Grype; a **critical** vulnerability that already has a fix fails the check, unless `.github/grype.yaml` records why it is accepted (only for components that cannot be fixed from this repository, such as the Bouncy Castle library bundled inside Google's Android command-line tools; each entry names the exact version it covers, so it lapses when that component changes). Skipped when a PR touches neither `docker/`, `scripts/`, the smoke test nor the CI configuration.
+- **Build & test** — builds the image natively on `linux/amd64` and `linux/arm64` (no push) and runs `.github/scripts/smoke-test.sh`: Firebase CLI, pnpm and Starship versions against the pins in `Dockerfile.dev` (pnpm is resolved with the network disabled, proving the build-time cache works), the container user (UID/GID 1000, passwordless `sudo`), writable cache directories, Git's trust of `/workspace`, Node 24, Android platform, Chrome/Chromium, `flutter doctor`, the shell aliases and the Dev Container metadata label. The build uses no layer cache, so it contains the packages available today. On `amd64` the image is then scanned with Grype; a **critical** vulnerability that already has a fix fails the check, unless `.github/grype.yaml` records why it is accepted (only for components that cannot be fixed from this repository, such as the Bouncy Castle library bundled inside Google's Android command-line tools; each entry names the exact version it covers, so it lapses when that component changes). Skipped when a PR touches neither `docker/`, `scripts/`, the smoke test nor the CI configuration.
 - **npm audit** — audits the `firebase-tools` tree exactly as the image installs it (pinned version plus `docker/firebase-tools-overrides.json`). Any **high or critical** advisory fails the check unless `.github/npm-audit-allowlist.txt` records why it is accepted; moderate and low findings are listed for information. The result and the full report are written to the job summary.
 - **CI passed** — the single aggregate check required by branch protection. It fails if any job failed or was cancelled; jobs skipped by design count as passed.
 
 ### `workflows/docker.yml`
 
-Builds and publishes the multi-platform image (`linux/amd64` + `linux/arm64`) to Docker Hub. Each architecture is built **natively** on its own runner (no QEMU emulation), smoke-tested with the same script the pull requests use, and only then pushed by digest. Before anything is pushed, a `reserve-tag` job picks the next free revision `R` (free on Docker Hub, and creatable as a git tag on GitHub: a name used by an immutable release stays reserved even after the release is deleted, so those numbers are skipped) and creates the git tag `flutter-X.Y.Z.R` with `.github/scripts/reserve-tag.sh`. A final job merges both digests into one manifest list, applies the tags and signs the result with a keyless [Sigstore](https://www.sigstore.dev/) signature (see [Verifying the image](#verifying-the-image)). Every build carries SBOM and maximum-detail provenance attestations, and the layer cache lives in `buildcache-<arch>` tags in the registry rather than in the size-limited GitHub Actions cache.
+Builds and publishes the multi-platform image (`linux/amd64` + `linux/arm64`) to Docker Hub. Each architecture is built **natively** on its own runner (no QEMU emulation), smoke-tested with the same script the pull requests use, and only then pushed by digest. Before anything is pushed, a `reserve-tag` job picks the next free revision `R` (free on Docker Hub, and creatable as a git tag on GitHub: a name used by an immutable release stays reserved even after the release is deleted, so those numbers are skipped) and creates the git tag `flutter-X.Y.Z.R` with `.github/scripts/reserve-tag.sh`. A final job merges both digests into one manifest list, applies the tags and signs the result with a keyless [Sigstore](https://www.sigstore.dev/) signature (see [Verifying the image](#verifying-the-image)). Every build carries SBOM and maximum-detail provenance attestations. No build uses a layer cache: every build starts from the pinned base image, so `apt-get upgrade`, the Flutter stable clone and the SDK downloads always take the current releases (a cached layer would silently keep the old ones).
 
 The push trigger is path-filtered (`docker/`, `scripts/`, `.dockerignore` and the workflow itself — everything the build copies or reads), so a README change never rebuilds the image. There is no schedule: the image is published only when an image change is merged to `main`, or when you run the workflow by hand. Pull requests are validated by `ci.yml` instead. The jobs use the `docker-hub` environment, which holds the Docker Hub credentials and is restricted to `main`.
 
@@ -283,11 +285,11 @@ The push trigger is path-filtered (`docker/`, `scripts/`, `.dockerignore` and th
 
 ### `workflows/dependency-drift.yml`
 
-Dependabot cannot see the tools pinned in `Dockerfile.dev`, so this workflow compares them with their official release channels every Monday and keeps **one** issue up to date. It covers firebase-tools, pnpm (within its pinned major line — a newer major is noted separately), Starship, the Android cmdline-tools build, the digest of the `node` base image, and every advisory accepted in `.github/npm-audit-allowlist.txt` (reported as soon as a patched release exists). The issue closes itself when every pin is current. Renovate normally opens the PR for firebase-tools, pnpm and the node digest; the issue is the safety net for those and the only prompt for Starship and the cmdline-tools build, whose downloads are checksum-verified and so need a deliberate bump. Bump what it lists as described in [Updating the Image](#updating-the-image).
+Dependabot cannot see the tools pinned in `Dockerfile.dev`, so this workflow compares them with their official release channels every Monday and keeps **one** issue up to date. It covers firebase-tools, pnpm (within its pinned major line — a newer major is noted separately), Starship, the Android cmdline-tools build, the digest of the `node` base image, the actionlint version pinned in `ci.yml`, and every advisory accepted in `.github/npm-audit-allowlist.txt` (reported as soon as a patched release exists). The issue closes itself when every pin is current. Renovate normally opens the PR for firebase-tools, pnpm and the node digest; the issue is the safety net for those and the only prompt for Starship and the cmdline-tools build, whose downloads are checksum-verified and so need a deliberate bump. Bump what it lists as described in [Updating the Image](#updating-the-image).
 
 ### `workflows/dockerhub-description.yml`
 
-Syncs `README.md` to the Docker Hub repository description page on every `README.md` change merged to `main`.
+Syncs the user-facing sections of `README.md` to the Docker Hub repository description page on every `README.md` change merged to `main`. Docker Hub keeps at most 25,000 bytes and the README is about twice that, so `.github/scripts/dockerhub-readme.sh` leaves out the maintainer sections (repository structure, automation, updating the image, repository setup, contributing), turns links to README headings into absolute GitHub links, and ends with a link to the full README. The **Docs sync** check fails a pull request that would push the Docker Hub part over the limit.
 
 ### `workflows/release.yml`
 
@@ -536,8 +538,8 @@ Verify the tag exists at [hub.docker.com/_/node/tags](https://hub.docker.com/_/n
 Firebase CLI is pinned via `ENV FIREBASE_TOOLS_VERSION` in `docker/Dockerfile.dev`. Check the latest version at [npmjs.com/package/firebase-tools](https://www.npmjs.com/package/firebase-tools) and update the env:
 
 ```dockerfile
-ENV FIREBASE_TOOLS_VERSION=15.34.0 \
-    PNPM_VERSION=12.14.0 \
+ENV FIREBASE_TOOLS_VERSION=15.35.0 \
+    PNPM_VERSION=12.18.0 \
 ```
 
 firebase-tools is installed into its own prefix (`/opt/firebase-tools`, with `firebase` symlinked into `/usr/local/bin`) instead of with `npm install -g`, because only a local install honours npm `overrides`. `docker/firebase-tools-overrides.json` pins patched versions of transitive dependencies that upstream has not picked up yet (today `basic-ftp` and the `uuid` used by `gaxios`). After a version bump:
@@ -551,7 +553,7 @@ firebase-tools is installed into its own prefix (`/opt/firebase-tools`, with `fi
 pnpm is activated via Corepack and pinned via `ENV PNPM_VERSION` in `docker/Dockerfile.dev`. The image tracks the pnpm 12 line; when a newer major appears, the drift workflow mentions it separately because it needs its own review. Check the latest 12.x version at [npmjs.com/package/pnpm](https://www.npmjs.com/package/pnpm) and update the env:
 
 ```dockerfile
-ENV PNPM_VERSION=12.14.0
+ENV PNPM_VERSION=12.18.0
 ```
 
 > `corepack enable` runs as **root** (it writes shims to the root-owned `/usr/local/bin`), but `corepack prepare pnpm@${PNPM_VERSION} --activate` runs as the non-root `developer` user. Corepack caches the download for the user that runs it, so preparing pnpm as `developer` is what makes `pnpm` work offline for that user. From pnpm 12 the package is only a launcher that downloads its native binary on first use, so the build also runs `pnpm --version` once (as `developer`, with network access) to bake that binary into the cache and to assert the pinned version. CI proves this by resolving pnpm with `COREPACK_ENABLE_NETWORK=0`.
@@ -762,4 +764,4 @@ The rules this setup enforces:
 
 ---
 
-Flutter stable · Dart · Android API 36 · Java 21 Temurin · Node.js 24 LTS · pnpm 12.14.0 · Debian 13 Trixie · 2026
+Flutter stable · Dart · Android API 36 · Java 21 Temurin · Node.js 24 LTS · pnpm 12.18.0 · Debian 13 Trixie · 2026
