@@ -613,7 +613,6 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 1. Go to **Settings → Environments → `docker-hub`**
 1. Confirm both `DOCKERHUB_USERNAME` and `DOCKERHUB_TOKEN` are present as environment secrets
-1. Confirm the token has **Read, Write & Delete** scope — Read-only tokens cannot push
 1. If expired: Docker Hub → **Account Settings → Personal access tokens** → delete → create new → update the secret
 1. Re-run from the **Actions** tab
 
@@ -728,7 +727,7 @@ Flutter SDK + Android SDK together are ~4–5 GB. Ensure Docker Desktop has at l
 Everything in the repository (workflows, rulesets as JSON, labels, templates, docs) comes back with a `git push`. The settings that live outside it are recorded, value by value, in [`docs/github-setup.md`](docs/github-setup.md). To recreate everything after deleting the repository, work through this list in order; the guide has the exact values for every step.
 
 1. **GitHub repository:** create `alihaidar0/flutter-devcontainer` (public), push `develop` and `main`, set the About description, website and topics.
-2. **Docker Hub:** create the public repository `alihaidar199527/flutter-devcontainer`, add the short description and categories, create an access token with **Read, Write & Delete**, and leave tag retention off.
+2. **Docker Hub:** create the public repository `alihaidar199527/flutter-devcontainer`, add the short description and categories, create an access token, and leave tag retention off.
 3. **GitHub settings:** default branch `develop`; merge commits only; the Actions allow-list, SHA pinning and read-only workflow permissions; the `docker-hub` environment limited to `main` with the secrets `DOCKERHUB_USERNAME` and `DOCKERHUB_TOKEN`; Dependabot, secret scanning, push protection, private vulnerability reporting and CodeQL.
 4. **Labels:** run the **Labels** workflow once.
 5. **First image:** merge an image change `develop` → `main` (or run **Docker** by hand on `main`), then run **Docker Hub Description** once. The first image is `flutter-X.Y.Z.1`.

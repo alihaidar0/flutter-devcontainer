@@ -92,7 +92,7 @@ The image repository is created and configured by hand; the workflows only push 
 1. **Create the repository.** Docker Hub → **Repositories** → **Create repository**: namespace `alihaidar199527`, name `flutter-devcontainer`, visibility **Public**. Create it before the first publish; the publish job pushes into it and the README sync only runs once it exists.
 2. **Short description** (100 characters at most): `Base Flutter dev container image with Android SDK, Web, Java, Node and Firebase. amd64 + arm64.`
 3. **Categories:** `Developer tools` and `Languages & frameworks`.
-4. **Access token.** Docker Hub → Account settings → **Personal access tokens** → **Generate new token**, permission **Read, Write & Delete**. Copy it once; it goes into the `docker-hub` environment in section 5. Note the expiry date and renew it before then (see *Build fails — authentication error* in the README's troubleshooting section).
+4. **Access token.** Docker Hub → Account settings → **Personal access tokens** → **Generate new token**. Copy it once; it goes into the `docker-hub` environment in section 5. Note the expiry date and renew it before then (see *Build fails — authentication error* in the README's troubleshooting section).
 5. **Do not enable tag retention or inactive-image clean-up** for this repository. Old `flutter-X.Y.Z.R` tags are restore points and must not expire outside the pipeline.
 6. **The README is synced by the pipeline.** The **Docker Hub Description** workflow copies the user-facing sections of `README.md` (built by `.github/scripts/dockerhub-readme.sh`, because Docker Hub keeps at most 25,000 bytes) to the repository overview on every README change merged to `main`. After creating a new repository, run it once by hand (Actions → **Docker Hub Description** → **Run workflow**, branch `main`).
 
@@ -304,7 +304,7 @@ A one-page list to tick off after a recovery. Each line points to the section wi
 | ☐ | GitHub | Repository public, `develop` and `main` pushed | 1 |
 | ☐ | GitHub | About: description, website, topics | 1 |
 | ☐ | Docker Hub | Repository public, short description, categories, no tag retention | 2 |
-| ☐ | Docker Hub | Access token (Read, Write & Delete) | 2 |
+| ☐ | Docker Hub | Access token | 2 |
 | ☐ | GitHub | Default branch `develop`; merge commits only; auto-delete head branches; release immutability | 3 |
 | ☐ | GitHub | Actions allow-list, SHA pinning, read-only workflow permissions | 4 |
 | ☐ | GitHub | `docker-hub` environment limited to `main`, with `DOCKERHUB_USERNAME` and `DOCKERHUB_TOKEN`, no repository-level copies | 5 |
